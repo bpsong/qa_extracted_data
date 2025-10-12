@@ -1,0 +1,240 @@
+title: "Contract Schema"
+description: "Schema for contract data extracted from PDF documents"
+
+fields:
+  contract_title:
+    type: string
+    label: "Contract Title"
+    required: true
+    min_length: 2
+    max_length: 200
+    help: "Title or name of the contract"
+    
+  contract_number:
+    type: string
+    label: "Contract Number"
+    required: false
+    pattern: "^[A-Z0-9-_]+$"
+    max_length: 50
+    help: "Unique contract identifier"
+    
+  contract_type:
+    type: enum
+    label: "Contract Type"
+    required: false
+    choices: ["Service Agreement", "Purchase Agreement", "Employment Contract", "NDA", "License Agreement", "Other"]
+    help: "Type of contract"
+    
+  effective_date:
+    type: date
+    label: "Effective Date"
+    required: true
+    help: "Date when the contract becomes effective"
+    
+  expiration_date:
+    type: date
+    label: "Expiration Date"
+    required: false
+    help: "Date when the contract expires"
+    
+  contract_value:
+    type: number
+    label: "Contract Value"
+    required: false
+    min_value: 0
+    max_value: 10000000
+    help: "Total value of the contract"
+    
+  currency:
+    type: enum
+    label: "Currency"
+    required: false
+    default: "USD"
+    choices: ["USD", "EUR", "GBP", "CAD", "AUD"]
+    help: "Currency code for the contract value"
+    
+  party_a_name:
+    type: string
+    label: "Party A Name"
+    required: true
+    max_length: 200
+    help: "Name of the first contracting party"
+    
+  party_a_address:
+    type: object
+    label: "Party A Address"
+    required: false
+    help: "Address of Party A"
+    properties:
+      company_name:
+        type: string
+        label: "Company Name"
+        required: false
+        max_length: 200
+      street_address:
+        type: string
+        label: "Street Address"
+        required: false
+        max_length: 200
+      city:
+        type: string
+        label: "City"
+        required: false
+        max_length: 100
+      state_province:
+        type: string
+        label: "State/Province"
+        required: false
+        max_length: 100
+      postal_code:
+        type: string
+        label: "Postal Code"
+        required: false
+        pattern: "^[A-Z0-9\\s-]+$"
+        max_length: 20
+      country:
+        type: string
+        label: "Country"
+        required: false
+        max_length: 100
+        
+  party_b_name:
+    type: string
+    label: "Party B Name"
+    required: true
+    max_length: 200
+    help: "Name of the second contracting party"
+    
+  party_b_address:
+    type: object
+    label: "Party B Address"
+    required: false
+    help: "Address of Party B"
+    properties:
+      company_name:
+        type: string
+        label: "Company Name"
+        required: false
+        max_length: 200
+      street_address:
+        type: string
+        label: "Street Address"
+        required: false
+        max_length: 200
+      city:
+        type: string
+        label: "City"
+        required: false
+        max_length: 100
+      state_province:
+        type: string
+        label: "State/Province"
+        required: false
+        max_length: 100
+      postal_code:
+        type: string
+        label: "Postal Code"
+        required: false
+        pattern: "^[A-Z0-9\\s-]+$"
+        max_length: 20
+      country:
+        type: string
+        label: "Country"
+        required: false
+        max_length: 100
+        
+  scope_of_work:
+    type: string
+    label: "Scope of Work"
+    required: false
+    max_length: 2000
+    multiline: true
+    help: "Description of work or services to be provided"
+    
+  payment_terms:
+    type: enum
+    label: "Payment Terms"
+    required: false
+    choices: ["Net 30", "Net 60", "Net 90", "Due on Receipt", "Monthly", "Quarterly", "Annually", "Other"]
+    help: "Payment terms for this contract"
+    
+  termination_clause:
+    type: string
+    label: "Termination Clause"
+    required: false
+    max_length: 1000
+    multiline: true
+    help: "Terms for contract termination"
+    
+  renewal_terms:
+    type: string
+    label: "Renewal Terms"
+    required: false
+    max_length: 500
+    multiline: true
+    help: "Terms for contract renewal"
+    
+  governing_law:
+    type: string
+    label: "Governing Law"
+    required: false
+    max_length: 100
+    help: "Jurisdiction governing this contract"
+    
+  signature_date_a:
+    type: date
+    label: "Party A Signature Date"
+    required: false
+    help: "Date when Party A signed"
+    
+  signature_date_b:
+    type: date
+    label: "Party B Signature Date"
+    required: false
+    help: "Date when Party B signed"
+    
+  witness_name:
+    type: string
+    label: "Witness Name"
+    required: false
+    max_length: 100
+    help: "Name of witness if applicable"
+    
+  notary_name:
+    type: string
+    label: "Notary Name"
+    required: false
+    max_length: 100
+    help: "Name of notary if applicable"
+    
+  status:
+    type: enum
+    label: "Contract Status"
+    required: false
+    default: "Draft"
+    choices: ["Draft", "Under Review", "Executed", "Expired", "Terminated"]
+    help: "Current status of the contract"
+    
+  notes:
+    type: string
+    label: "Notes"
+    required: false
+    max_length: 1000
+    multiline: true
+    help: "Additional notes or comments"
+    
+  extracted_confidence:
+    type: number
+    label: "Extraction Confidence"
+    required: false
+    min_value: 0
+    max_value: 1
+    readonly: true
+    help: "AI extraction confidence score (0-1)"
+    
+  extraction_timestamp:
+    type: datetime
+    label: "Extraction Timestamp"
+    required: false
+    readonly: true
+    help: "When this data was extracted from the PDF"

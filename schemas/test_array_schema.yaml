@@ -1,0 +1,32 @@
+title: "Array Test Schema"
+description: "Test schema for array of scalar values support"
+
+fields:
+  "Supplier name":
+    type: string
+    label: "Supplier Name"
+    required: true
+    help: "Name of the supplier company"
+
+  "Serial Numbers":
+    type: array
+    label: "Serial Numbers"
+    required: false
+    help: "List of equipment serial numbers"
+    items:
+      type: string
+
+  "Invoice Amount":
+    type: number
+    label: "Invoice Amount"
+    required: true
+    help: "Total invoice amount"
+
+  "Tags":
+    type: array
+    label: "Tags"
+    required: false
+    help: "List of tags for categorization"
+    items:
+      type: string
+      min_length: 1

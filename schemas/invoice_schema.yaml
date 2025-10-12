@@ -1,0 +1,272 @@
+title: "Invoice Schema"
+description: "Schema for invoice/purchase order data extracted from PDF documents"
+
+fields:
+  "Supplier name":
+    type: string
+    label: "Supplier Name"
+    required: true
+    min_length: 2
+    max_length: 200
+    help: "Name of the supplier or vendor"
+    
+  "Purchase Order number":
+    type: string
+    label: "Purchase Order Number"
+    required: true
+    pattern: "^[A-Z0-9-_]+$"
+    min_length: 3
+    max_length: 50
+    help: "Unique purchase order identifier"
+    
+  "Invoice number":
+    type: string
+    label: "Invoice Number"
+    required: false
+    pattern: "^[A-Z0-9-_]+$"
+    max_length: 50
+    help: "Invoice number from supplier"
+    
+  "Invoice date":
+    type: date
+    label: "Invoice Date"
+    required: false
+    help: "Date when the invoice was issued"
+    
+  "Due date":
+    type: date
+    label: "Due Date"
+    required: false
+    help: "Payment due date"
+    
+  "Invoice Amount":
+    type: number
+    label: "Invoice Amount"
+    required: true
+    min_value: 0
+    max_value: 1000000
+    help: "Total invoice amount in dollars"
+    
+  "Currency":
+    type: enum
+    label: "Currency"
+    required: false
+    default: "USD"
+    choices: ["USD", "EUR", "GBP", "CAD", "AUD", "SGD"]
+    help: "Currency code for the invoice amount"
+    
+  "Project number":
+    type: string
+    label: "Project Number"
+    required: false
+    pattern: "^[A-Z0-9-_]+$"
+    max_length: 30
+    help: "Associated project identifier"
+    
+  "Department":
+    type: enum
+    label: "Department"
+    required: false
+    choices: ["Engineering", "Marketing", "Sales", "Operations", "Finance", "HR", "IT"]
+    help: "Department responsible for this expense"
+    
+  "Cost center":
+    type: string
+    label: "Cost Center"
+    required: false
+    pattern: "^[0-9]{4,6}$"
+    help: "4-6 digit cost center code"
+    
+  "Description":
+    type: string
+    label: "Description"
+    required: false
+    max_length: 500
+    multiline: true
+    help: "Description of goods or services"
+    
+  "Line items":
+    type: array
+    label: "Line Items"
+    required: false
+    help: "Individual items on the invoice"
+    items:
+      type: object
+      properties:
+        "Item description":
+          type: string
+          label: "Item Description"
+          required: true
+          max_length: 200
+        "Quantity":
+          type: number
+          label: "Quantity"
+          required: true
+          min_value: 0
+        "Unit price":
+          type: number
+          label: "Unit Price"
+          required: true
+          min_value: 0
+        "Total price":
+          type: number
+          label: "Total Price"
+          required: true
+          min_value: 0
+        
+  "Billing address":
+    type: object
+    label: "Billing Address"
+    required: false
+    help: "Billing address information"
+    properties:
+      "Company name":
+        type: string
+        label: "Company Name"
+        required: false
+        max_length: 200
+      "Street address":
+        type: string
+        label: "Street Address"
+        required: false
+        max_length: 200
+      "City":
+        type: string
+        label: "City"
+        required: false
+        max_length: 100
+      "State/Province":
+        type: string
+        label: "State/Province"
+        required: false
+        max_length: 100
+      "Postal code":
+        type: string
+        label: "Postal Code"
+        required: false
+        pattern: "^[A-Z0-9\\s-]+$"
+        max_length: 20
+      "Country":
+        type: string
+        label: "Country"
+        required: false
+        max_length: 100
+        
+  "Shipping address":
+    type: object
+    label: "Shipping Address"
+    required: false
+    help: "Shipping address if different from billing"
+    properties:
+      "Company name":
+        type: string
+        label: "Company Name"
+        required: false
+        max_length: 200
+      "Street address":
+        type: string
+        label: "Street Address"
+        required: false
+        max_length: 200
+      "City":
+        type: string
+        label: "City"
+        required: false
+        max_length: 100
+      "State/Province":
+        type: string
+        label: "State/Province"
+        required: false
+        max_length: 100
+      "Postal code":
+        type: string
+        label: "Postal Code"
+        required: false
+        pattern: "^[A-Z0-9\\s-]+$"
+        max_length: 20
+      "Country":
+        type: string
+        label: "Country"
+        required: false
+        max_length: 100
+        
+  "Tax amount":
+    type: number
+    label: "Tax Amount"
+    required: false
+    min_value: 0
+    help: "Total tax amount"
+    
+  "Tax rate":
+    type: number
+    label: "Tax Rate"
+    required: false
+    min_value: 0
+    max_value: 1
+    help: "Tax rate as decimal (e.g., 0.08 for 8%)"
+    
+  "Subtotal":
+    type: number
+    label: "Subtotal"
+    required: false
+    min_value: 0
+    help: "Amount before tax"
+    
+  "Payment terms":
+    type: enum
+    label: "Payment Terms"
+    required: false
+    choices: ["Net 30", "Net 60", "Net 90", "Due on Receipt", "COD", "Other"]
+    help: "Payment terms for this invoice"
+    
+  "Payment method":
+    type: enum
+    label: "Payment Method"
+    required: false
+    choices: ["Check", "Wire Transfer", "ACH", "Credit Card", "Other"]
+    help: "Preferred payment method"
+    
+  "Approval status":
+    type: enum
+    label: "Approval Status"
+    required: false
+    default: "Pending"
+    choices: ["Pending", "Approved", "Rejected", "On Hold"]
+    help: "Current approval status"
+    
+  "Approved by":
+    type: string
+    label: "Approved By"
+    required: false
+    max_length: 100
+    help: "Name of person who approved this invoice"
+    
+  "Approval date":
+    type: date
+    label: "Approval Date"
+    required: false
+    help: "Date when invoice was approved"
+    
+  "Notes":
+    type: string
+    label: "Notes"
+    required: false
+    max_length: 1000
+    multiline: true
+    help: "Additional notes or comments"
+    
+  "Extracted confidence":
+    type: number
+    label: "Extraction Confidence"
+    required: false
+    min_value: 0
+    max_value: 1
+    readonly: true
+    help: "AI extraction confidence score (0-1)"
+    
+  "Extraction timestamp":
+    type: datetime
+    label: "Extraction Timestamp"
+    required: false
+    readonly: true
+    help: "When this data was extracted from the PDF"

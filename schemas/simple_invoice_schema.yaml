@@ -1,0 +1,55 @@
+title: Simple Invoice Schema
+description: Minimal schema for simple invoices with four basic fields
+fields:
+  Supplier name:
+    type: string
+    label: Supplier Name
+    required: true
+    min_length: 2
+    max_length: 250
+    help: Name of the supplier or vendor
+    readonly: false
+  Purchase Order number:
+    type: string
+    label: Purchase Order Number
+    required: true
+    pattern: ^[A-Z0-9-_]+$
+    min_length: 1
+    max_length: 50
+    help: Unique purchase order identifier
+    readonly: false
+  Invoice Amount:
+    type: number
+    label: Invoice Amount
+    required: true
+    help: Total invoice amount (float)
+    readonly: false
+  Project number:
+    type: string
+    label: Project Number
+    required: false
+    max_length: 30
+    help: Associated project identifier
+    readonly: false
+  Currency:
+    type: enum
+    label: Currency
+    required: false
+    default: SGD
+    choices:
+    - USD
+    - EUR
+    - GBP
+    - CAD
+    - AUD
+    - SGD
+    - MYR
+    help: Currency code for the invoice amount
+    readonly: false
+  Pay:
+    type: boolean
+    label: Pay or Not Pay
+    required: false
+    readonly: false
+    default: true
+schema_version: 1

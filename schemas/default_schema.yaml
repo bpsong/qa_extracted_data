@@ -1,0 +1,236 @@
+title: "Default Document Schema"
+description: "Generic fallback schema for unknown document types"
+
+fields:
+  document_type:
+    type: string
+    label: "Document Type"
+    required: false
+    default: "unknown"
+    max_length: 100
+    help: "Type of document (invoice, receipt, contract, etc.)"
+    
+  document_id:
+    type: string
+    label: "Document ID"
+    required: false
+    max_length: 100
+    help: "Unique identifier for this document"
+    
+  document_date:
+    type: date
+    label: "Document Date"
+    required: false
+    help: "Date associated with this document"
+    
+  company_name:
+    type: string
+    label: "Company Name"
+    required: false
+    max_length: 200
+    help: "Name of the company or organization"
+    
+  contact_person:
+    type: string
+    label: "Contact Person"
+    required: false
+    max_length: 100
+    help: "Primary contact person"
+    
+  email:
+    type: string
+    label: "Email Address"
+    required: false
+    pattern: "^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$"
+    max_length: 200
+    help: "Email address"
+    
+  phone:
+    type: string
+    label: "Phone Number"
+    required: false
+    pattern: "^[\\d\\s\\-\\(\\)\\+\\.]+$"
+    max_length: 30
+    help: "Phone number"
+    
+  address:
+    type: object
+    label: "Address"
+    required: false
+    help: "Address information"
+    properties:
+      street:
+        type: string
+        label: "Street Address"
+        required: false
+        max_length: 200
+      city:
+        type: string
+        label: "City"
+        required: false
+        max_length: 100
+      state:
+        type: string
+        label: "State/Province"
+        required: false
+        max_length: 100
+      postal_code:
+        type: string
+        label: "Postal Code"
+        required: false
+        max_length: 20
+      country:
+        type: string
+        label: "Country"
+        required: false
+        max_length: 100
+        
+  amount:
+    type: number
+    label: "Amount"
+    required: false
+    min_value: 0
+    help: "Monetary amount if applicable"
+    
+  currency:
+    type: enum
+    label: "Currency"
+    required: false
+    default: "USD"
+    choices: ["USD", "EUR", "GBP", "CAD", "AUD", "JPY", "CHF", "CNY"]
+    help: "Currency code"
+    
+  description:
+    type: string
+    label: "Description"
+    required: false
+    max_length: 1000
+    multiline: true
+    help: "General description or summary"
+    
+  status:
+    type: enum
+    label: "Status"
+    required: false
+    default: "Pending"
+    choices: ["Pending", "Processed", "Approved", "Rejected", "On Hold", "Completed"]
+    help: "Current status of the document"
+    
+  priority:
+    type: enum
+    label: "Priority"
+    required: false
+    default: "Normal"
+    choices: ["Low", "Normal", "High", "Urgent"]
+    help: "Priority level"
+    
+  category:
+    type: string
+    label: "Category"
+    required: false
+    max_length: 100
+    help: "Document category or classification"
+    
+  tags:
+    type: array
+    label: "Tags"
+    required: false
+    help: "Tags or keywords associated with this document"
+    items:
+      type: string
+      max_length: 50
+      
+  custom_fields:
+    type: object
+    label: "Custom Fields"
+    required: false
+    help: "Additional custom data fields"
+    properties: {}
+    
+  metadata:
+    type: object
+    label: "Metadata"
+    required: false
+    help: "Document metadata and processing information"
+    properties:
+      file_name:
+        type: string
+        label: "Original File Name"
+        required: false
+        readonly: true
+        max_length: 255
+      file_size:
+        type: integer
+        label: "File Size (bytes)"
+        required: false
+        readonly: true
+        min_value: 0
+      page_count:
+        type: integer
+        label: "Page Count"
+        required: false
+        readonly: true
+        min_value: 1
+      extraction_method:
+        type: string
+        label: "Extraction Method"
+        required: false
+        readonly: true
+        max_length: 100
+      extraction_confidence:
+        type: number
+        label: "Extraction Confidence"
+        required: false
+        readonly: true
+        min_value: 0
+        max_value: 1
+      extraction_timestamp:
+        type: datetime
+        label: "Extraction Timestamp"
+        required: false
+        readonly: true
+      processing_notes:
+        type: string
+        label: "Processing Notes"
+        required: false
+        readonly: true
+        max_length: 500
+        multiline: true
+        
+  notes:
+    type: string
+    label: "Notes"
+    required: false
+    max_length: 2000
+    multiline: true
+    help: "Additional notes or comments"
+    
+  created_by:
+    type: string
+    label: "Created By"
+    required: false
+    readonly: true
+    max_length: 100
+    help: "User who created this record"
+    
+  created_date:
+    type: datetime
+    label: "Created Date"
+    required: false
+    readonly: true
+    help: "When this record was created"
+    
+  last_modified_by:
+    type: string
+    label: "Last Modified By"
+    required: false
+    readonly: true
+    max_length: 100
+    help: "User who last modified this record"
+    
+  last_modified_date:
+    type: datetime
+    label: "Last Modified Date"
+    required: false
+    readonly: true
+    help: "When this record was last modified"

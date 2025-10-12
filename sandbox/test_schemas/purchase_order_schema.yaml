@@ -1,0 +1,64 @@
+title: "Purchase Order Schema"
+description: "Schema for purchase orders with line items"
+
+fields:
+  po_number:
+    type: string
+    label: "PO Number"
+    required: true
+    help: "Purchase order number"
+    
+  vendor_name:
+    type: string
+    label: "Vendor Name"
+    required: true
+    help: "Name of the vendor"
+    
+  order_date:
+    type: date
+    label: "Order Date"
+    required: true
+    help: "Date the order was placed"
+    
+  line_items:
+    type: array
+    label: "Line Items"
+    required: true
+    help: "List of items being purchased"
+    items:
+      type: object
+      properties:
+        item_code:
+          type: string
+          label: "Item Code"
+          required: true
+          help: "Product item code"
+        description:
+          type: string
+          label: "Description"
+          required: true
+          help: "Item description"
+        quantity:
+          type: integer
+          label: "Quantity"
+          required: true
+          help: "Number of items"
+          min_value: 1
+        unit_price:
+          type: number
+          label: "Unit Price"
+          required: true
+          help: "Price per unit"
+          min_value: 0
+        total_price:
+          type: number
+          label: "Total Price"
+          required: false
+          help: "Total price for this line item"
+          
+  total_amount:
+    type: number
+    label: "Total Amount"
+    required: true
+    help: "Total purchase order amount"
+    min_value: 0

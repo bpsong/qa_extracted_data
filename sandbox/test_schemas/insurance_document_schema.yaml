@@ -1,0 +1,50 @@
+title: "Insurance Document Schema"
+description: "Schema for insurance documents with serial numbers and tags"
+
+fields:
+  supplier_name:
+    type: string
+    label: "Supplier Name"
+    required: true
+    help: "Name of the insurance supplier"
+    
+  client_name:
+    type: string
+    label: "Client Name"
+    required: true
+    help: "Name of the client"
+    
+  policy_number:
+    type: string
+    label: "Policy Number"
+    required: true
+    help: "Insurance policy number"
+    pattern: "^[A-Z0-9]+$"
+    
+  serial_numbers:
+    type: array
+    label: "Serial Numbers"
+    required: false
+    help: "List of equipment serial numbers"
+    items:
+      type: string
+      min_length: 3
+      max_length: 20
+      pattern: "^[A-Z0-9]+$"
+      
+  invoice_amount:
+    type: number
+    label: "Invoice Amount"
+    required: true
+    help: "Total invoice amount"
+    min_value: 0
+    
+  tags:
+    type: array
+    label: "Tags"
+    required: false
+    help: "Categorization tags"
+    items:
+      type: string
+      min_length: 1
+      max_length: 50

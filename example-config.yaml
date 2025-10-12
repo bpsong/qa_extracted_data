@@ -1,0 +1,70 @@
+# JSON QA Webapp Configuration Example
+# 
+# This file demonstrates all available configuration options for the JSON QA webapp.
+# Copy this file to 'config.yaml' in your project root and customize as needed.
+#
+# Note: All sections are optional. Missing sections will use default values.
+
+# Application metadata and settings
+app:
+  # Display name for the application
+  name: "JSON QA Webapp"
+  
+  # Application version (for display purposes)
+  version: "1.1.0"
+  
+  # Enable debug mode (shows additional logging and error details)
+  debug: false
+
+# Schema configuration for JSON validation
+schema:
+  # Primary schema file to use for validation
+  # Should be located in the schemas/ directory
+  primary_schema: "invoice_schema.yaml"
+  
+  # Fallback schema if primary is not found
+  fallback_schema: "default_schema.yaml"
+
+# Directory paths configuration
+# All paths can be absolute or relative to the project root
+directories:
+  # Directory containing input JSON files awaiting validation
+  # Files in this directory appear in the queue view
+  json_docs: "json_docs"
+  
+  # Directory for validated and corrected JSON files
+  # Processed files are saved here after correction
+  corrected: "corrected"
+  
+  # Directory for audit logs and processing history
+  # Audit trail is written here in JSONL format
+  audits: "audits"
+  
+  # Directory containing original PDF documents
+  # PDF files should match JSON filenames (e.g., invoice_001.json -> invoice_001.pdf)
+  pdf_docs: "pdf_docs"
+  
+  # Directory for file locking mechanism
+  # Used to prevent concurrent editing conflicts
+  locks: "locks"
+
+# User interface customization
+ui:
+  # Main page title displayed in browser tab and header
+  page_title: "JSON Quality Assurance"
+  
+  # Sidebar navigation title
+  sidebar_title: "Navigation"
+
+# File processing and performance settings
+processing:
+  # File lock timeout in minutes
+  # Files are automatically unlocked after this duration
+  lock_timeout: 60
+  
+  # Maximum file size in MB for processing
+  # Files larger than this will show warnings
+  max_file_size: 10
+
+# Additional configuration sections can be added here
+# The application will ignore unknown sections gracefully
