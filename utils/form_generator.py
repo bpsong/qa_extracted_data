@@ -31,7 +31,7 @@ class FormGenerator:
         Returns:
             Updated form data from the form
         """
-        st.subheader("📝 Extracted Data")
+        st.subheader("Extracted Data")
         
         if not schema or 'fields' not in schema:
             st.error("Invalid schema provided")
@@ -49,10 +49,10 @@ class FormGenerator:
             col_buttons = st.columns(2)
             
             with col_buttons[0]:
-                validate_submitted = st.form_submit_button("🔍 Validate Data")
+                validate_submitted = st.form_submit_button("Validate Data")
             
             with col_buttons[1]:
-                submit_submitted = st.form_submit_button("💾 Submit Changes", type="primary")
+                submit_submitted = st.form_submit_button("Submit Changes", type="primary")
             
             # Handle validation button
             if validate_submitted:
@@ -64,12 +64,12 @@ class FormGenerator:
                 
                 if validation_errors:
                     SessionManager.set_validation_errors(validation_errors)
-                    st.error("❌ Please fix the following errors:")
+                    st.error("Please fix the following errors:")
                     for error in validation_errors:
                         st.error(f"  • {error}")
                 else:
                     SessionManager.clear_validation_errors()
-                    st.success("✅ Data validated successfully")
+                    st.success("Data validated successfully")
                 
                 # Always return the form_data to preserve changes
                 return form_data
@@ -84,13 +84,13 @@ class FormGenerator:
                 
                 if validation_errors:
                     SessionManager.set_validation_errors(validation_errors)
-                    st.error("❌ Validation failed. Please fix errors before submitting:")
+                    st.error("Validation failed. Please fix errors before submitting:")
                     for error in validation_errors:
                         st.error(f"  • {error}")
                     return form_data
                 else:
                     SessionManager.clear_validation_errors()
-                    st.success("✅ Validation passed. Submitting changes...")
+                    st.success("Validation passed. Submitting changes...")
                 
                 # Proceed with submission
                 filename = SessionManager.get_current_file()
@@ -98,7 +98,7 @@ class FormGenerator:
                 user = SessionManager.get_current_user()
                 
                 if filename is None or original_data is None or user is None:
-                    st.error("❌ Missing required information for submission")
+                    st.error("Missing required information for submission")
                     return form_data
                 
                 success, errors = SubmissionHandler.validate_and_submit(
@@ -106,13 +106,13 @@ class FormGenerator:
                 )
                 
                 if success:
-                    st.success("✅ Changes submitted successfully!")
+                    st.success("Changes submitted successfully!")
                     # Clear state and navigate
                     SessionManager._clear_file_state()
                     SessionManager.set_current_page('queue')
                     st.rerun()
                 else:
-                    st.error("❌ Submission failed:")
+                    st.error("Submission failed:")
                     for error in errors:
                         st.error(f"  • {error}")
                     SessionManager.set_validation_errors(errors)
@@ -131,7 +131,7 @@ class FormGenerator:
         grouped_fields = FormGenerator._group_fields(fields)
         for group_name, group_fields in grouped_fields.items():
             if group_name != "General":
-                st.subheader(f"📋 {group_name}")
+                st.subheader(f"{group_name}")
             
             # Render fields in columns for better layout
             cols = st.columns(2)
@@ -294,7 +294,9 @@ class FormGenerator:
                 widget_type = 'number_input'
             elif field_type == 'boolean':
                 widget_type = 'checkbox'
-            elif field_type in ['array', 'object']:
+            elif field_type == 'array':
+                widget_type = 'array_editor'
+            elif field_type == 'object':
                 if field_config.get('format') == 'data-grid':
                     widget_type = 'data_editor'
                 else:
@@ -317,6 +319,8 @@ class FormGenerator:
                 return FormGenerator._render_date_input(field_name, field_config, widget_kwargs)
             elif widget_type == 'datetime_input':
                 return FormGenerator._render_datetime_input(field_name, field_config, widget_kwargs)
+            elif widget_type == 'array_editor':
+                return FormGenerator._render_array_editor(field_name, field_config, value_to_use or [])
             elif widget_type == 'data_editor':
                 return FormGenerator._render_array_editor(field_name, field_config, value_to_use or [])
             elif widget_type == 'json_editor':
@@ -349,7 +353,7 @@ class FormGenerator:
         if value and 'pattern' in field_config:
             import re
             if not re.match(field_config['pattern'], value):
-                st.error(f"❌ Value doesn't match required pattern: {field_config['pattern']}")
+                st.error(f"Value doesn't match required pattern: {field_config['pattern']}")
         
         return value if value is not None else ""
     
@@ -468,80 +472,221 @@ class FormGenerator:
     
     @staticmethod
     def _render_array_editor(field_name: str, field_config: Dict[str, Any], current_value: Any) -> List[Any]:
-        """Render array editor using st.data_editor."""
-        import pandas as pd
-        
-        st.write(f"**{field_config.get('label', field_name)}**")
-        
-        # Convert current value to DataFrame
+        """Enhanced array editor that delegates to specialized editors based on array type."""
+        # Convert current value to list if needed
         if not current_value or not isinstance(current_value, list):
             current_value = []
         
         # Get item schema
         items_config = field_config.get('items', {})
+        item_type = items_config.get('type', 'string')
         
-        if items_config.get('type') == 'object' and 'properties' in items_config:
-            # Object array - use data editor
-            properties = items_config['properties']
-            
-            # Create DataFrame
-            if current_value:
-                df = pd.DataFrame(current_value)
-            else:
-                # Create empty DataFrame with correct columns
-                columns = list(properties.keys())
-                df = pd.DataFrame(columns=columns)
-            
-            # Configure column types
-            column_config = {}
-            for prop_name, prop_config in properties.items():
-                prop_type = prop_config.get('type', 'string')
-                if prop_type == 'number':
-                    column_config[prop_name] = st.column_config.NumberColumn(
-                        prop_config.get('label', prop_name),
-                        help=prop_config.get('help', ''),
-                        min_value=prop_config.get('min_value'),
-                        max_value=prop_config.get('max_value'),
-                        step=prop_config.get('step', 0.01)
-                    )
-                elif prop_type == 'boolean':
-                    column_config[prop_name] = st.column_config.CheckboxColumn(
-                        prop_config.get('label', prop_name),
-                        help=prop_config.get('help', '')
-                    )
-                else:
-                    column_config[prop_name] = st.column_config.TextColumn(
-                        prop_config.get('label', prop_name),
-                        help=prop_config.get('help', ''),
-                        max_chars=prop_config.get('max_length')
-                    )
-            
-            # Render data editor
-            edited_df = st.data_editor(
-                df,
-                column_config=column_config,
-                num_rows="dynamic",
-                use_container_width=True,
-                key=f"array_{field_name}"
-            )
-            
-            return edited_df.to_dict('records')
-        
+        if item_type == 'object' and 'properties' in items_config:
+            # Object array - use enhanced object array editor
+            return FormGenerator._render_object_array_editor(field_name, field_config, current_value)
         else:
-            # Simple array - use text area with JSON
-            st.write("Edit as JSON array:")
-            json_str = st.text_area(
-                f"JSON for {field_name}",
-                value=json.dumps(current_value, indent=2),
-                height=150,
-                key=f"json_array_{field_name}"
-            )
+            # Scalar array - use enhanced scalar array editor
+            return FormGenerator._render_scalar_array_editor(field_name, field_config, current_value)
+    
+    @staticmethod
+    def _render_scalar_array_editor(field_name: str, field_config: Dict[str, Any], current_value: List[Any]) -> List[Any]:
+        """
+        Enhanced user-friendly editor for arrays of scalar values with proper key namespacing.
+        
+        Args:
+            field_name: Name of the field
+            field_config: Field configuration from schema
+            current_value: Current array value
             
-            try:
-                return json.loads(json_str)
-            except json.JSONDecodeError:
-                st.error("❌ Invalid JSON format")
-                return current_value
+        Returns:
+            Updated array value
+        """
+        items_config = field_config.get("items", {})
+        item_type = items_config.get("type", "string")
+        
+        # Initialize array if empty
+        if not current_value:
+            current_value = []
+        
+        # Create a copy to work with
+        working_array = current_value.copy()
+        
+        # Use field-specific keys to prevent state leakage between forms
+        field_key = f"scalar_array_{field_name}"
+        removal_key = f"{field_key}_remove_item"
+        add_key = f"{field_key}_add_item"
+        
+        # Initialize removal state if not exists
+        if removal_key not in st.session_state:
+            st.session_state[removal_key] = None
+        
+        # Initialize add state for better button handling
+        if add_key not in st.session_state:
+            st.session_state[add_key] = False
+        
+        # Container for the array editor
+        with st.container():
+            # Instructions for scalar array editing (ASCII text only)
+            st.info("How to edit: Modify values in the input fields. Use 'Add Item' to add new items. Click 'Remove' next to any item to remove it.")
+            
+            # Add item section at the top
+            col1, col2 = st.columns([3, 1])
+            
+            with col1:
+                st.markdown(f"**{field_config.get('label', field_name)}** ({item_type} array)")
+            
+            with col2:
+                # Add item button with field-specific key
+                add_button_key = f"{field_key}_add_btn"
+                if st.button("Add Item", key=add_button_key):
+                    st.session_state[add_key] = True
+                    st.rerun()  # Force immediate rerun
+            
+            # Handle add item request
+            if st.session_state.get(add_key, False):
+                default_value = FormGenerator._get_default_value_for_type(item_type, items_config)
+                working_array.append(default_value)
+                st.session_state[add_key] = False  # Reset add state
+            
+            # Handle item removal first (check for removal requests)
+            if removal_key in st.session_state and st.session_state[removal_key] is not None:
+                item_to_remove = st.session_state[removal_key]
+                if 0 <= item_to_remove < len(working_array):
+                    working_array.pop(item_to_remove)
+                st.session_state[removal_key] = None  # Reset removal state
+            
+            # Render existing items
+            for i, item_value in enumerate(working_array):
+                col1, col2 = st.columns([4, 1])
+                
+                with col1:
+                    # Render input based on item type with field-specific key
+                    new_value = FormGenerator._render_scalar_input(
+                        f"{field_name}[{i}]",
+                        item_type,
+                        item_value,
+                        items_config,
+                        key=f"{field_key}_item_{i}"
+                    )
+                    working_array[i] = new_value
+                
+                with col2:
+                    # Remove button - store removal request in session state with field-specific key
+                    if st.button("Remove", key=f"{field_key}_remove_{i}", help="Remove this item"):
+                        st.session_state[removal_key] = i
+                        st.rerun()  # Force immediate rerun to process removal
+            
+            # Validation feedback
+            validation_errors = FormGenerator._validate_scalar_array(field_name, working_array, items_config)
+            if validation_errors:
+                for error in validation_errors:
+                    st.error(error)
+            else:
+                if working_array:  # Only show success if array is not empty
+                    st.success(f"{len(working_array)} items valid")
+        
+        # Write the updated array back to session state so _render_field can pick it up
+        field_key = f"field_{field_name}"
+        st.session_state[field_key] = working_array
+        
+        return working_array
+    
+    @staticmethod
+    def _render_object_array_editor(field_name: str, field_config: Dict[str, Any], current_value: List[Any]) -> List[Any]:
+        """
+        Enhanced object array editor with manual row operations, NaN cleanup, and integer column config.
+        Ported from sandbox with ASCII text labels for production compatibility.
+        """
+        import pandas as pd
+        import numpy as np
+        
+        items_config = field_config.get("items", {})
+        properties = items_config.get("properties", {})
+        
+        # Initialize array if empty
+        if not current_value:
+            current_value = []
+        
+        # Create a copy to work with
+        working_array = current_value.copy()
+        
+        # Generate column configuration for st.data_editor
+        column_config = FormGenerator._generate_column_config(properties)
+        
+        # Container for the object array editor
+        with st.container():
+            # Instructions for object array editing (ASCII text only)
+            st.info("How to edit: Click cells to edit values directly in the table. Use 'Add Row' to add new items. Use the row deletion section below to remove rows.")
+            
+            col1, col2 = st.columns([3, 1])
+            
+            with col1:
+                st.markdown(f"**{field_config.get('label', field_name)}**")
+            
+            with col2:
+                # Add row button with field-specific key
+                if st.button("Add Row", key=f"add_row_{field_name}"):
+                    new_object = FormGenerator._create_default_object(properties)
+                    working_array.append(new_object)
+                    st.rerun()  # Force immediate rerun to show new row
+            
+            # Display the data editor if we have data
+            if working_array:
+                # Convert to DataFrame-like structure for st.data_editor
+                df = pd.DataFrame(working_array)
+                
+                # Use st.data_editor for table editing with delete capability
+                edited_df = st.data_editor(
+                    df,
+                    column_config=column_config,
+                    num_rows="dynamic",
+                    use_container_width=True,
+                    key=f"data_editor_{field_name}",
+                    hide_index=False  # Show index to help with row identification
+                )
+                
+                # Convert back to list of dictionaries
+                working_array = edited_df.to_dict('records')
+                
+                # Clean up any NaN values that pandas might introduce
+                working_array = FormGenerator._clean_object_array(working_array)
+                
+                # Add manual row deletion interface
+                if len(working_array) > 0:
+                    st.markdown("#### Manual Row Operations")
+                    col1, col2 = st.columns([2, 1])
+                    
+                    with col1:
+                        row_to_delete = st.selectbox(
+                            "Select row to delete:",
+                            options=list(range(len(working_array))),
+                            format_func=lambda x: f"Row {x}: {working_array[x].get(list(working_array[x].keys())[0], 'N/A') if working_array[x] else 'Empty'}",
+                            key=f"delete_row_select_{field_name}"
+                        )
+                    
+                    with col2:
+                        if st.button("Delete Selected Row", key=f"delete_row_{field_name}"):
+                            if 0 <= row_to_delete < len(working_array):
+                                working_array.pop(row_to_delete)
+                                st.success(f"Deleted row {row_to_delete}")
+                                st.rerun()
+            else:
+                st.info("No items in array. Click 'Add Row' to add the first item.")
+            
+            # Validation feedback
+            validation_errors = FormGenerator._validate_object_array(field_name, working_array, items_config)
+            if validation_errors:
+                for error in validation_errors:
+                    st.error(error)
+            else:
+                if working_array:  # Only show success if array is not empty
+                    st.success(f"{len(working_array)} objects valid")
+        
+        # Write the updated array back to session state so _render_field can pick it up
+        field_key = f"field_{field_name}"
+        st.session_state[field_key] = working_array
+        
+        return working_array
     
     @staticmethod
     def _render_object_editor(field_name: str, field_config: Dict[str, Any], current_value: Any) -> Dict[str, Any]:
@@ -580,7 +725,7 @@ class FormGenerator:
             try:
                 return json.loads(json_str)
             except json.JSONDecodeError:
-                st.error("❌ Invalid JSON format")
+                st.error("Invalid JSON format")
                 return current_value or {}
     
     # Removed _validate_form_data as validation now uses SubmissionHandler._validate_submission_data
@@ -640,6 +785,381 @@ class FormGenerator:
             choices = field_config.get('choices', [])
             if value not in choices:
                 errors.append(f"Field '{field_name}' must be one of: {', '.join(map(str, choices))}")
+        
+        return errors
+    
+    @staticmethod
+    def _get_default_value_for_type(item_type: str, items_config: Dict[str, Any]) -> Any:
+        """Get appropriate default value for array item type, respecting constraints."""
+        if item_type == "string":
+            return ""
+        elif item_type == "number":
+            min_val = items_config.get("min_value")
+            if min_val is not None:
+                return max(0.0, float(min_val)) if min_val >= 0 else float(min_val)
+            return 0.0
+        elif item_type == "integer":
+            min_val = items_config.get("min_value")
+            if min_val is not None:
+                return max(0, int(min_val)) if min_val >= 0 else int(min_val)
+            return 0
+        elif item_type == "boolean":
+            return items_config.get("default", False)
+        elif item_type == "date":
+            return datetime.now().strftime("%Y-%m-%d")
+        elif item_type == "enum":
+            choices = items_config.get("choices", [])
+            return items_config.get("default", choices[0] if choices else "")
+        else:
+            return ""
+    
+    @staticmethod
+    def _render_scalar_input(field_name: str, item_type: str, current_value: Any, items_config: Dict[str, Any], key: str) -> Any:
+        """Render appropriate input widget for scalar array item with enum support."""
+        
+        if item_type == "string":
+            value = st.text_input(
+                f"Item {key.split('_')[-1]}",
+                value=str(current_value) if current_value is not None else "",
+                key=key,
+                help=f"String value for {field_name}"
+            )
+            return value
+        
+        elif item_type == "number":
+            min_val = items_config.get("min_value", None)
+            max_val = items_config.get("max_value", None)
+            step = items_config.get("step", 0.01)
+            
+            # Ensure all numeric types are consistent (float)
+            min_val = float(min_val) if min_val is not None else None
+            max_val = float(max_val) if max_val is not None else None
+            step = float(step)
+            
+            value = st.number_input(
+                f"Item {key.split('_')[-1]}",
+                value=float(current_value) if current_value is not None else 0.0,
+                min_value=min_val,
+                max_value=max_val,
+                step=step,
+                format="%.2f",
+                key=key,
+                help=f"Number value for {field_name}"
+            )
+            return round(value, 2)
+        
+        elif item_type == "integer":
+            min_val = items_config.get("min_value", None)
+            max_val = items_config.get("max_value", None)
+            step = items_config.get("step", 1)
+            
+            # Ensure all numeric types are consistent (int)
+            min_val = int(min_val) if min_val is not None else None
+            max_val = int(max_val) if max_val is not None else None
+            step = int(step)
+            
+            value = st.number_input(
+                f"Item {key.split('_')[-1]}",
+                value=int(current_value) if current_value is not None else 0,
+                min_value=min_val,
+                max_value=max_val,
+                step=step,
+                format="%d",
+                key=key,
+                help=f"Integer value for {field_name}"
+            )
+            return int(value)
+        
+        elif item_type == "boolean":
+            value = st.checkbox(
+                f"Item {key.split('_')[-1]}",
+                value=bool(current_value) if current_value is not None else False,
+                key=key,
+                help=f"Boolean value for {field_name}"
+            )
+            return value
+        
+        elif item_type == "date":
+            try:
+                if isinstance(current_value, str):
+                    current_date = datetime.strptime(current_value, "%Y-%m-%d").date()
+                elif isinstance(current_value, date):
+                    current_date = current_value
+                else:
+                    current_date = datetime.now().date()
+            except (ValueError, TypeError):
+                current_date = datetime.now().date()
+            
+            value = st.date_input(
+                f"Item {key.split('_')[-1]}",
+                value=current_date,
+                key=key,
+                help=f"Date value for {field_name}"
+            )
+            return value.strftime("%Y-%m-%d")
+        
+        elif item_type == "enum":
+            choices = items_config.get("choices", [])
+            if not choices:
+                # Fallback to text input if no choices defined
+                return st.text_input(
+                    f"Item {key.split('_')[-1]}",
+                    value=str(current_value) if current_value is not None else "",
+                    key=key,
+                    help=f"Enum value for {field_name}"
+                )
+            
+            # Find current index
+            try:
+                current_index = choices.index(current_value) if current_value in choices else 0
+            except (ValueError, TypeError):
+                current_index = 0
+            
+            value = st.selectbox(
+                f"Item {key.split('_')[-1]}",
+                choices,
+                index=current_index,
+                key=key,
+                help=f"Select value for {field_name}"
+            )
+            return value
+        
+        else:
+            # Fallback to text input
+            value = st.text_input(
+                f"Item {key.split('_')[-1]}",
+                value=str(current_value) if current_value is not None else "",
+                key=key,
+                help=f"Value for {field_name}"
+            )
+            return value
+    
+    @staticmethod
+    def _validate_scalar_array(field_name: str, array_value: List[Any], items_config: Dict[str, Any]) -> List[str]:
+        """Validate array of scalar values with detailed error reporting."""
+        errors = []
+        
+        if not isinstance(array_value, list):
+            errors.append(f"{field_name} must be an array")
+            return errors
+        
+        item_type = items_config.get("type", "string")
+        
+        for i, item_value in enumerate(array_value):
+            item_errors = FormGenerator._validate_scalar_item(f"{field_name}[{i}]", item_value, item_type, items_config)
+            errors.extend(item_errors)
+        
+        return errors
+    
+    @staticmethod
+    def _validate_scalar_item(field_path: str, value: Any, item_type: str, items_config: Dict[str, Any]) -> List[str]:
+        """Validate a single scalar array item with contextual error messages."""
+        errors = []
+        
+        # Type validation
+        if item_type == "string":
+            if not isinstance(value, str):
+                errors.append(f"{field_path} must be a string")
+                return errors
+            
+            # Length constraints
+            min_length = items_config.get("min_length")
+            if min_length is not None and len(value) < min_length:
+                errors.append(f"{field_path} must be at least {min_length} characters")
+            
+            max_length = items_config.get("max_length")
+            if max_length is not None and len(value) > max_length:
+                errors.append(f"{field_path} must be no more than {max_length} characters")
+            
+            # Pattern validation
+            pattern = items_config.get("pattern")
+            if pattern:
+                import re
+                try:
+                    if not re.match(pattern, value):
+                        errors.append(f"{field_path} must match pattern: {pattern}")
+                except re.error:
+                    errors.append(f"{field_path} has invalid pattern: {pattern}")
+        
+        elif item_type == "number":
+            try:
+                num_value = float(value)
+            except (ValueError, TypeError):
+                errors.append(f"{field_path} must be a valid number")
+                return errors
+            
+            min_value = items_config.get("min_value")
+            if min_value is not None and num_value < min_value:
+                errors.append(f"{field_path} must be at least {min_value}")
+            
+            max_value = items_config.get("max_value")
+            if max_value is not None and num_value > max_value:
+                errors.append(f"{field_path} must be no more than {max_value}")
+        
+        elif item_type == "integer":
+            try:
+                int_value = int(value)
+            except (ValueError, TypeError):
+                errors.append(f"{field_path} must be a valid integer")
+                return errors
+            
+            min_value = items_config.get("min_value")
+            if min_value is not None and int_value < min_value:
+                errors.append(f"{field_path} must be at least {min_value}")
+            
+            max_value = items_config.get("max_value")
+            if max_value is not None and int_value > max_value:
+                errors.append(f"{field_path} must be no more than {max_value}")
+        
+        elif item_type == "boolean":
+            if not isinstance(value, bool):
+                errors.append(f"{field_path} must be a boolean")
+        
+        elif item_type == "date":
+            if isinstance(value, str):
+                try:
+                    datetime.strptime(value, "%Y-%m-%d")
+                except ValueError:
+                    errors.append(f"{field_path} must be a valid date in YYYY-MM-DD format")
+            elif not isinstance(value, date):
+                errors.append(f"{field_path} must be a valid date")
+        
+        elif item_type == "enum":
+            choices = items_config.get("choices", [])
+            if choices and value not in choices:
+                errors.append(f"{field_path} must be one of: {', '.join(map(str, choices))}")
+        
+        return errors
+    
+    @staticmethod
+    def _generate_column_config(properties: Dict[str, Dict[str, Any]]) -> Dict[str, Any]:
+        """Generate column configuration for st.data_editor based on object properties"""
+        column_config = {}
+        
+        for prop_name, prop_config in properties.items():
+            prop_type = prop_config.get("type", "string")
+            label = prop_config.get("label", prop_name)
+            help_text = prop_config.get("help", "")
+            required = prop_config.get("required", False)
+            
+            if prop_type == "string":
+                column_config[prop_name] = st.column_config.TextColumn(
+                    label=label,
+                    help=help_text,
+                    required=required,
+                    max_chars=prop_config.get("max_length", None)
+                )
+            elif prop_type == "number":
+                column_config[prop_name] = st.column_config.NumberColumn(
+                    label=label,
+                    help=help_text,
+                    required=required,
+                    min_value=prop_config.get("min_value", None),
+                    max_value=prop_config.get("max_value", None),
+                    step=prop_config.get("step", 0.01),
+                    format="%.2f"
+                )
+            elif prop_type == "integer":
+                column_config[prop_name] = st.column_config.NumberColumn(
+                    label=label,
+                    help=help_text,
+                    required=required,
+                    min_value=prop_config.get("min_value", None),
+                    max_value=prop_config.get("max_value", None),
+                    step=prop_config.get("step", 1),
+                    format="%d"
+                )
+            elif prop_type == "boolean":
+                column_config[prop_name] = st.column_config.CheckboxColumn(
+                    label=label,
+                    help=help_text,
+                    required=required
+                )
+            elif prop_type == "date":
+                column_config[prop_name] = st.column_config.DateColumn(
+                    label=label,
+                    help=help_text,
+                    required=required
+                )
+            else:
+                # Default to text column
+                column_config[prop_name] = st.column_config.TextColumn(
+                    label=label,
+                    help=help_text,
+                    required=required
+                )
+        
+        return column_config
+    
+    @staticmethod
+    def _create_default_object(properties: Dict[str, Dict[str, Any]]) -> Dict[str, Any]:
+        """Create a default object with appropriate default values for each property"""
+        default_object = {}
+        
+        for prop_name, prop_config in properties.items():
+            prop_type = prop_config.get("type", "string")
+            default_object[prop_name] = FormGenerator._get_default_value_for_type(prop_type, prop_config)
+        
+        return default_object
+    
+    @staticmethod
+    def _clean_object_array(array: List[Dict]) -> List[Dict]:
+        """Clean object array by removing NaN values and converting numpy types"""
+        import pandas as pd
+        import numpy as np
+        
+        cleaned_array = []
+        for obj in array:
+            cleaned_obj = {}
+            for key, value in obj.items():
+                # Handle pandas NaN values
+                if pd.isna(value):
+                    cleaned_obj[key] = None
+                elif isinstance(value, np.integer):
+                    cleaned_obj[key] = int(value)
+                elif isinstance(value, np.floating):
+                    cleaned_obj[key] = float(value)
+                else:
+                    cleaned_obj[key] = value
+            cleaned_array.append(cleaned_obj)
+        
+        return cleaned_array
+    
+    @staticmethod
+    def _validate_object_array(field_name: str, array_value: List[Dict], items_config: Dict[str, Any]) -> List[str]:
+        """Validate object array according to schema constraints"""
+        errors = []
+        properties = items_config.get("properties", {})
+        
+        for i, obj in enumerate(array_value):
+            obj_errors = FormGenerator._validate_object_item(f"{field_name}[{i}]", obj, properties)
+            errors.extend(obj_errors)
+        
+        return errors
+    
+    @staticmethod
+    def _validate_object_item(item_path: str, obj: Dict[str, Any], properties: Dict[str, Dict[str, Any]]) -> List[str]:
+        """Validate individual object in array"""
+        errors = []
+        
+        # Check required properties
+        for prop_name, prop_config in properties.items():
+            required = prop_config.get("required", False)
+            prop_type = prop_config.get("type", "string")
+            
+            if required and (prop_name not in obj or obj[prop_name] is None or obj[prop_name] == ""):
+                errors.append(f"{item_path}.{prop_name}: is required")
+                continue
+            
+            # Skip validation if property is not present or is None/empty (for optional fields)
+            if prop_name not in obj or obj[prop_name] is None:
+                continue
+            
+            value = obj[prop_name]
+            
+            # Validate property value
+            prop_errors = FormGenerator._validate_scalar_item(f"{item_path}.{prop_name}", value, prop_type, prop_config)
+            errors.extend(prop_errors)
         
         return errors
 

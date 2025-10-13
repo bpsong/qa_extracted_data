@@ -440,6 +440,14 @@ class EditView:
                     if str(key).startswith('array_') or str(key).startswith('json_array_'):
                         del st.session_state[key]
                 
+                # Clear new array editor keys introduced by enhanced array support
+                for key in list(st.session_state.keys()):
+                    if (str(key).startswith('scalar_array_') or 
+                        str(key).startswith('data_editor_') or 
+                        str(key).startswith('delete_row_') or
+                        str(key).startswith('add_row_')):
+                        del st.session_state[key]
+                
                 # Update widget-level session state keys with original values
                 def update_widget_keys(data, schema, prefix=''):
                     if isinstance(data, dict):

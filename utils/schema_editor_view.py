@@ -14,6 +14,7 @@ import shutil
 import re
 import collections
 from utils.ui_feedback import Notify
+from utils.array_field_manager import ArrayFieldManager
 
 # Helper functions for managing the editor dirty state and caches.
 # These centralize dirty/clean semantics and keep backward compatibility
@@ -636,13 +637,17 @@ class SchemaEditor:
                 field_type = field_config.get('type', 'string')
                 
                 # Warn about unsupported field types
-                if field_type in ['array', 'object']:
+                if field_type == 'object':
                     warnings.append(f"Field '{field_name}' has type '{field_type}' which is not yet supported in the editor")
+                elif field_type == 'array':
+                    # Validate array field configuration
+                    array_errors = SchemaEditor._validate_imported_array_field(field_name, field_config)
+                    errors.extend(array_errors)
                 elif field_type not in ['string', 'integer', 'number', 'float', 'boolean', 'enum', 'date', 'datetime']:
                     warnings.append(f"Field '{field_name}' has unknown type '{field_type}' - will be converted to 'string'")
                 
-                # Check for nested properties that indicate complex structures
-                if isinstance(field_config, dict):
+                # Check for nested properties that indicate complex structures (but not for arrays)
+                if isinstance(field_config, dict) and field_type != 'array':
                     if 'properties' in field_config:
                         warnings.append(f"Field '{field_name}' has nested properties which will be ignored")
                     if 'items' in field_config:
@@ -660,6 +665,34 @@ class SchemaEditor:
             logger.error(f"Error validating imported schema: {e}", exc_info=True)
             errors.append(f"Validation error: {str(e)}")
             return False, errors, warnings
+    
+    @staticmethod
+    def _validate_imported_array_field(field_name: str, field_config: Dict[str, Any]) -> List[str]:
+        """
+        Validate imported array field configuration.
+        
+        Args:
+            field_name: Name of the array field
+            field_config: Field configuration dictionary
+            
+        Returns:
+            List of validation error messages
+        """
+        errors = []
+        
+        try:
+            # Use ArrayFieldManager validation
+            validation_errors = ArrayFieldManager.validate_array_config(field_config)
+            
+            # Prefix errors with field name for context
+            for error in validation_errors:
+                errors.append(f"Array field '{field_name}': {error}")
+            
+        except Exception as e:
+            logger.error(f"Error validating imported array field {field_name}: {e}", exc_info=True)
+            errors.append(f"Array field '{field_name}': Validation error - {str(e)}")
+        
+        return errors
     
     @staticmethod
     def _filter_unsupported_fields(schema: Dict[str, Any]) -> Dict[str, Any]:
@@ -682,7 +715,7 @@ class SchemaEditor:
             
             # Process fields
             original_fields = schema.get('fields', {})
-            supported_types = ['string', 'integer', 'number', 'float', 'boolean', 'enum', 'date', 'datetime']
+            supported_types = ['string', 'integer', 'number', 'float', 'boolean', 'enum', 'date', 'datetime', 'array']
             
             for field_name, field_config in original_fields.items():
                 if not isinstance(field_config, dict):
@@ -733,6 +766,11 @@ class SchemaEditor:
                     if 'default' in field_config:
                         filtered_field['default'] = field_config['default']
                 
+                elif field_type == 'array':
+                    # Handle array field import
+                    if 'items' in field_config:
+                        filtered_field['items'] = SchemaEditor._filter_array_items_config(field_config['items'])
+                
                 # Add readonly property if present
                 if 'readonly' in field_config:
                     filtered_field['readonly'] = field_config['readonly']
@@ -748,6 +786,85 @@ class SchemaEditor:
             logger.error(f"Error filtering schema: {e}", exc_info=True)
             # Return original schema if filtering fails
             return schema
+    
+    @staticmethod
+    def _filter_array_items_config(items_config: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Filter array items configuration to include only supported properties.
+        
+        Args:
+            items_config: Original items configuration
+            
+        Returns:
+            Filtered items configuration
+        """
+        try:
+            item_type = items_config.get('type', 'string')
+            filtered_items = {'type': item_type}
+            
+            if item_type == 'object':
+                # Handle object array items
+                if 'properties' in items_config:
+                    filtered_items['properties'] = {}
+                    properties = items_config['properties']
+                    
+                    for prop_name, prop_config in properties.items():
+                        if isinstance(prop_config, dict):
+                            prop_type = prop_config.get('type', 'string')
+                            
+                            filtered_prop = {
+                                'type': prop_type,
+                                'label': prop_config.get('label', prop_name.replace('_', ' ').title()),
+                                'required': prop_config.get('required', False)
+                            }
+                            
+                            # Add type-specific properties for object properties
+                            if prop_type == 'string':
+                                for key in ['min_length', 'max_length', 'pattern']:
+                                    if key in prop_config:
+                                        filtered_prop[key] = prop_config[key]
+                            elif prop_type in ['integer', 'number']:
+                                for key in ['min_value', 'max_value', 'step']:
+                                    if key in prop_config:
+                                        filtered_prop[key] = prop_config[key]
+                            elif prop_type == 'enum':
+                                if 'choices' in prop_config:
+                                    filtered_prop['choices'] = prop_config['choices']
+                                if 'default' in prop_config:
+                                    filtered_prop['default'] = prop_config['default']
+                            elif prop_type == 'boolean':
+                                if 'default' in prop_config:
+                                    filtered_prop['default'] = prop_config['default']
+                            
+                            # Clean None values
+                            filtered_prop = {k: v for k, v in filtered_prop.items() if v is not None and v != ''}
+                            filtered_items['properties'][prop_name] = filtered_prop
+            
+            else:
+                # Handle scalar array items
+                if item_type == 'string':
+                    for key in ['min_length', 'max_length', 'pattern']:
+                        if key in items_config:
+                            filtered_items[key] = items_config[key]
+                elif item_type in ['integer', 'number']:
+                    for key in ['min_value', 'max_value', 'step']:
+                        if key in items_config:
+                            filtered_items[key] = items_config[key]
+                elif item_type == 'enum':
+                    if 'choices' in items_config:
+                        filtered_items['choices'] = items_config['choices']
+                    if 'default' in items_config:
+                        filtered_items['default'] = items_config['default']
+                elif item_type == 'boolean':
+                    if 'default' in items_config:
+                        filtered_items['default'] = items_config['default']
+            
+            return filtered_items
+            
+        except Exception as e:
+            logger.error(f"Error filtering array items config: {e}", exc_info=True)
+            # Return basic config if filtering fails
+            return {'type': items_config.get('type', 'string')}
     
     @staticmethod
     def _initialize_session_state() -> None:
@@ -1268,7 +1385,7 @@ class SchemaEditor:
                 
                 # Enhanced field type selector with descriptions
                 current_type = field.get('type', 'string')
-                supported_types = ['string', 'integer', 'number', 'boolean', 'enum', 'date', 'datetime']
+                supported_types = ['string', 'integer', 'number', 'boolean', 'enum', 'date', 'datetime', 'array']
                 type_descriptions = {
                     'string': 'Text input with optional validation',
                     'integer': 'Whole numbers only',
@@ -1276,7 +1393,8 @@ class SchemaEditor:
                     'boolean': 'True/False checkbox',
                     'enum': 'Dropdown with predefined choices',
                     'date': 'Date picker',
-                    'datetime': 'Date and time picker'
+                    'datetime': 'Date and time picker',
+                    'array': 'List of values (scalar or objects)'
                 }
                 
                 # Handle unsupported types gracefully
@@ -2031,7 +2149,7 @@ class SchemaEditor:
                 field_type = field_config.get('type', 'string')
                 
                 # Check for unsupported field types
-                supported_types = ['string', 'integer', 'number', 'float', 'boolean', 'enum', 'date', 'datetime']
+                supported_types = ['string', 'integer', 'number', 'float', 'boolean', 'enum', 'date', 'datetime', 'array']
                 if field_type not in supported_types:
                     warnings.append(f"Field '{field_name}' has unsupported type '{field_type}'")
                 
@@ -2131,10 +2249,12 @@ class SchemaEditor:
             SchemaEditor._render_enum_field_editor(field_id, field)
         elif field_type in ['date', 'datetime']:
             SchemaEditor._render_date_field_editor(field_id, field)
+        elif field_type == 'array':
+            SchemaEditor._render_array_field_editor(field_id, field)
         else:
-            # Handle unsupported types (like object/array) gracefully
+            # Handle unsupported types gracefully
             st.info(f"ℹ️ Field type '{field_type}' editing will be available in a future phase.")
-            st.write("Complex nested types (object, array) are planned for the next development phase.")
+            st.write("Complex nested types are planned for future development phases.")
             
             # Update field in session state with minimal changes (no readonly update needed here)
             field_index = None
@@ -2643,6 +2763,48 @@ class SchemaEditor:
         if 'schema_editor_validation_results' not in st.session_state:
             st.session_state.schema_editor_validation_results = {}
         st.session_state.schema_editor_validation_results[field_id] = []
+    
+    @staticmethod
+    def _render_array_field_editor(field_id: str, field: Dict[str, Any]) -> None:
+        """Render array field editor using ArrayFieldManager."""
+        # Get current field index for updating
+        field_index = None
+        for i, f in enumerate(st.session_state.schema_editor_fields):
+            if f['id'] == field_id:
+                field_index = i
+                break
+        
+        if field_index is None:
+            st.error("Field not found in session state")
+            return
+        
+        # Store original field for comparison (deep copy to catch nested changes)
+        import copy
+        original_field = copy.deepcopy(field)
+        
+        # Use ArrayFieldManager to render the configuration interface
+        ArrayFieldManager.render_array_field_config(field_id, field)
+        
+        # Validate array configuration
+        validation_errors = ArrayFieldManager.validate_array_config(field)
+        
+        # Display validation results
+        if validation_errors:
+            st.error("❌ Array Configuration Errors:")
+            for error in validation_errors:
+                st.error(f"  • {error}")
+        else:
+            st.success("✅ Array field configuration is valid")
+        
+        # Check if field was modified and update session state
+        if field != original_field:
+            st.session_state.schema_editor_fields[field_index] = field
+            _mark_dirty()
+        
+        # Store validation errors for this field
+        if 'schema_editor_validation_results' not in st.session_state:
+            st.session_state.schema_editor_validation_results = {}
+        st.session_state.schema_editor_validation_results[field_id] = validation_errors
     
     @staticmethod
     def _handle_back_to_list() -> None:
@@ -3391,7 +3553,7 @@ def validate_field(field_name: str, field_config: Dict[str, Any]) -> List[str]:
             errors.append(f"Field '{field_name}' missing required 'type' property")
         else:
             field_type = field_config['type']
-            valid_types = ['string', 'integer', 'number', 'float', 'boolean', 'enum', 'date', 'datetime']
+            valid_types = ['string', 'integer', 'number', 'float', 'boolean', 'enum', 'date', 'datetime', 'array']
             if field_type not in valid_types:
                 errors.append(f"Field '{field_name}' has invalid type '{field_type}'. Valid types: {valid_types}")
         

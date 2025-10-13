@@ -1255,6 +1255,10 @@ def render_scalar_array_config() -> Dict[str, Any]:
             max_value = st.number_input("Max Value", value=1000.0, key="number_max", format="%.2f")
             config["max_value"] = round(max_value, 2)  # Round to 2 decimal places
         
+        # Validation: Check if min > max
+        if min_value > max_value:
+            st.error(f"⚠️ Min Value ({min_value:.2f}) cannot be greater than Max Value ({max_value:.2f})")
+        
         step = st.number_input("Step", min_value=0.01, value=0.01, step=0.01, key="number_step", format="%.2f")
         config["step"] = round(step, 2)  # Round to 2 decimal places
     
@@ -1269,6 +1273,10 @@ def render_scalar_array_config() -> Dict[str, Any]:
         with col2:
             max_value = st.number_input("Max Value", value=1000, step=1, key="integer_max")
             config["max_value"] = int(max_value)
+        
+        # Validation: Check if min > max
+        if int(min_value) > int(max_value):
+            st.error(f"⚠️ Min Value ({int(min_value)}) cannot be greater than Max Value ({int(max_value)})")
         
         step = st.number_input("Step", min_value=1, value=1, step=1, key="integer_step")
         config["step"] = int(step)
@@ -1309,22 +1317,28 @@ def render_object_array_config() -> Dict[str, Any]:
     if props_key not in st.session_state:
         st.session_state[props_key] = {}
     
+    # Initialize property counter for unique keys
+    if "obj_prop_counter" not in st.session_state:
+        st.session_state.obj_prop_counter = 0
+    
     # Add new property interface (outside form for dynamic updates)
     with st.expander("➕ Add New Property", expanded=True):
         col1, col2 = st.columns(2)
         
+        counter = st.session_state.obj_prop_counter
+        
         with col1:
-            prop_name = st.text_input("Property Name", placeholder="e.g., item_code", key="obj_prop_name")
-            prop_label = st.text_input("Property Label", placeholder="e.g., Item Code", key="obj_prop_label")
-            prop_required = st.checkbox("Required Property", key="obj_prop_required")
+            prop_name = st.text_input("Property Name", placeholder="e.g., item_code", key=f"obj_prop_name_{counter}")
+            prop_label = st.text_input("Property Label", placeholder="e.g., Item Code", key=f"obj_prop_label_{counter}")
+            prop_required = st.checkbox("Required Property", key=f"obj_prop_required_{counter}")
         
         with col2:
             prop_type = st.selectbox(
                 "Property Type",
                 ["string", "number", "integer", "boolean", "date", "enum"],
-                key="obj_prop_type_select"
+                key=f"obj_prop_type_select_{counter}"
             )
-            prop_help = st.text_input("Help Text", placeholder="Description of this property", key="obj_prop_help")
+            prop_help = st.text_input("Help Text", placeholder="Description of this property", key=f"obj_prop_help_{counter}")
         
         # Property-specific constraints (dynamic based on type)
         prop_config = {"type": prop_type, "label": prop_label or prop_name, "required": prop_required}
@@ -1336,15 +1350,15 @@ def render_object_array_config() -> Dict[str, Any]:
             st.markdown("**String Constraints**")
             col1, col2 = st.columns(2)
             with col1:
-                min_len = st.number_input("Min Length", min_value=0, value=0, step=1, key="obj_prop_min_len")
+                min_len = st.number_input("Min Length", min_value=0, value=0, step=1, key=f"obj_prop_min_len_{counter}")
                 if min_len > 0:
                     prop_config["min_length"] = min_len
             
             with col2:
-                max_len = st.number_input("Max Length", min_value=1, value=100, step=1, key="obj_prop_max_len")
+                max_len = st.number_input("Max Length", min_value=1, value=100, step=1, key=f"obj_prop_max_len_{counter}")
                 prop_config["max_length"] = max_len
             
-            pattern = st.text_input("Pattern (regex)", key="obj_prop_pattern", placeholder="e.g., ^[A-Z0-9]+$")
+            pattern = st.text_input("Pattern (regex)", key=f"obj_prop_pattern_{counter}", placeholder="e.g., ^[A-Z0-9]+$")
             if pattern:
                 prop_config["pattern"] = pattern
         
@@ -1359,6 +1373,10 @@ def render_object_array_config() -> Dict[str, Any]:
                 max_val = st.number_input("Max Value", value=1000.0, key="obj_prop_max_val", format="%.2f")
                 prop_config["max_value"] = round(max_val, 2)  # Round to 2 decimal places
             
+            # Validation: Check if min > max
+            if min_val > max_val:
+                st.error(f"⚠️ Min Value ({min_val:.2f}) cannot be greater than Max Value ({max_val:.2f})")
+            
             step_val = st.number_input("Step", min_value=0.01, value=0.01, step=0.01, key="obj_prop_step", format="%.2f")
             prop_config["step"] = round(step_val, 2)  # Round to 2 decimal places
         
@@ -1372,6 +1390,10 @@ def render_object_array_config() -> Dict[str, Any]:
             with col2:
                 max_val = st.number_input("Max Value", value=1000, step=1, key="obj_prop_max_val_int")
                 prop_config["max_value"] = int(max_val)
+            
+            # Validation: Check if min > max
+            if int(min_val) > int(max_val):
+                st.error(f"⚠️ Min Value ({int(min_val)}) cannot be greater than Max Value ({int(max_val)})")
             
             step_val = st.number_input("Step", min_value=1, value=1, step=1, key="obj_prop_step_int")
             prop_config["step"] = int(step_val)
@@ -1393,10 +1415,17 @@ def render_object_array_config() -> Dict[str, Any]:
                 prop_config["choices"] = choices
         
         # Add property button (outside form)
-        if st.button("Add Property", key="add_obj_property_btn") and prop_name:
-            st.session_state[props_key][prop_name] = prop_config
-            st.success(f"Added property: {prop_name}")
-            st.rerun()
+        if st.button("Add Property", key=f"add_obj_property_btn_{counter}") and prop_name:
+            if prop_name in st.session_state[props_key]:
+                st.warning(f"Property '{prop_name}' already exists. Use a different name.")
+            else:
+                st.session_state[props_key][prop_name] = prop_config
+                
+                # Increment counter to get fresh input fields for next property
+                st.session_state.obj_prop_counter += 1
+                
+                st.success(f"Added property: {prop_name}")
+                st.rerun()
     
     # Display current properties
     if st.session_state[props_key]:

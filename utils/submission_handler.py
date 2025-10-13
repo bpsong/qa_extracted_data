@@ -143,20 +143,35 @@ class SubmissionHandler:
     def _validate_submission_data(
         form_data: Dict[str, Any],
         schema: Dict[str, Any],
-        model_class: Optional[Any] = None
+        model_class: Optional[Any] = None,
+        use_comprehensive: bool = True
     ) -> List[str]:
         """Validate form data before submission."""
         field_errors = {}  # Dict to group errors by field
         
         try:
-            # Schema-based validation
-            schema_errors = SubmissionHandler._validate_against_schema(form_data, schema)
-            for error in schema_errors:
-                # Extract field name from error message (assuming format like "Field 'name' error")
-                field_name = SubmissionHandler._extract_field_from_error(error)
-                if field_name not in field_errors:
-                    field_errors[field_name] = []
-                field_errors[field_name].append(error)
+            if use_comprehensive:
+                # Use comprehensive validation with detailed error reporting
+                comprehensive_result = SubmissionHandler.comprehensive_validate_data(form_data, schema)
+                
+                # Convert comprehensive errors to simple string format for backward compatibility
+                for error in comprehensive_result["errors"]:
+                    field_name = error.get("field_path", "general")
+                    # Extract base field name (remove array indices and property paths)
+                    base_field = field_name.split('[')[0].split('.')[0]
+                    
+                    if base_field not in field_errors:
+                        field_errors[base_field] = []
+                    field_errors[base_field].append(error["message"])
+            else:
+                # Use legacy validation
+                schema_errors = SubmissionHandler._validate_against_schema(form_data, schema)
+                for error in schema_errors:
+                    # Extract field name from error message (assuming format like "Field 'name' error")
+                    field_name = SubmissionHandler._extract_field_from_error(error)
+                    if field_name not in field_errors:
+                        field_errors[field_name] = []
+                    field_errors[field_name].append(error)
             
             # Pydantic model validation (if available)
             if model_class:
@@ -299,6 +314,71 @@ class SubmissionHandler:
         return errors
     
     @staticmethod
+    def _validate_scalar_item(item_path: str, value: Any, items_config: Dict[str, Any]) -> List[str]:
+        """Validate individual scalar array item with enhanced error reporting"""
+        errors = []
+        item_type = items_config.get("type", "string")
+        
+        # Type validation
+        if item_type == "string":
+            if not isinstance(value, str):
+                errors.append(f"{item_path}: must be a string")
+                return errors
+            
+            # String constraints
+            min_length = items_config.get("min_length")
+            if min_length is not None and len(value) < min_length:
+                errors.append(f"{item_path}: must be at least {min_length} characters long")
+            
+            max_length = items_config.get("max_length")
+            if max_length is not None and len(value) > max_length:
+                errors.append(f"{item_path}: must be no more than {max_length} characters long")
+            
+            pattern = items_config.get("pattern")
+            if pattern and value:
+                try:
+                    if not re.match(pattern, value):
+                        errors.append(f"{item_path}: must match pattern {pattern}")
+                except re.error:
+                    logger.error(f"Invalid regex pattern for item {item_path}: {pattern}")
+        
+        elif item_type in ["number", "integer"]:
+            try:
+                numeric_value = float(value) if item_type == "number" else int(value)
+            except (ValueError, TypeError):
+                errors.append(f"{item_path}: must be a valid {item_type}")
+                return errors
+            
+            min_value = items_config.get("min_value")
+            if min_value is not None and numeric_value < min_value:
+                errors.append(f"{item_path}: must be at least {min_value}")
+            
+            max_value = items_config.get("max_value")
+            if max_value is not None and numeric_value > max_value:
+                errors.append(f"{item_path}: must be no more than {max_value}")
+        
+        elif item_type == "boolean":
+            if not isinstance(value, bool):
+                errors.append(f"{item_path}: must be a boolean")
+        
+        elif item_type == "date":
+            if isinstance(value, str):
+                try:
+                    datetime.strptime(value, "%Y-%m-%d")
+                except ValueError:
+                    errors.append(f"{item_path}: must be a valid date in YYYY-MM-DD format")
+            elif not isinstance(value, date):
+                errors.append(f"{item_path}: must be a valid date")
+        
+        elif item_type == "enum":
+            choices = items_config.get("choices", [])
+            if value not in choices:
+                choices_str = ', '.join(str(c) for c in choices)
+                errors.append(f"{item_path}: must be one of: {choices_str}")
+        
+        return errors
+    
+    @staticmethod
     def _validate_numeric_field(field_name: str, value: Any, field_config: Dict[str, Any]) -> List[str]:
         """Validate numeric field."""
         errors = []
@@ -370,7 +450,7 @@ class SubmissionHandler:
     
     @staticmethod
     def _validate_array_field(field_name: str, value: Any, field_config: Dict[str, Any]) -> List[str]:
-        """Validate array field."""
+        """Validate array field with enhanced item validation."""
         errors = []
         label = field_config.get('label', field_name)
         
@@ -381,9 +461,28 @@ class SubmissionHandler:
         # Validate array items if item schema is provided
         items_config = field_config.get('items')
         if items_config:
+            items_type = items_config.get('type')
+            
             for i, item in enumerate(value):
-                item_errors = SubmissionHandler._validate_field(f"{field_name}[{i}]", item, items_config)
-                errors.extend(item_errors)
+                item_path = f"{field_name}[{i}]"
+                
+                if items_type == "object":
+                    # Validate object items
+                    properties = items_config.get("properties", {})
+                    if not isinstance(item, dict):
+                        errors.append(f"{item_path}: must be an object")
+                        continue
+                    
+                    # Validate object properties
+                    for prop_name, prop_config in properties.items():
+                        prop_path = f"{item_path}.{prop_name}"
+                        prop_value = item.get(prop_name)
+                        prop_errors = SubmissionHandler._validate_field(prop_path, prop_value, prop_config)
+                        errors.extend(prop_errors)
+                else:
+                    # Validate scalar items using enhanced validation
+                    item_errors = SubmissionHandler._validate_scalar_item(item_path, item, items_config)
+                    errors.extend(item_errors)
         
         return errors
     
@@ -478,6 +577,340 @@ class SubmissionHandler:
             errors.append("Business rule validation failed")
         
         return errors
+    
+    @staticmethod
+    def _validate_field_comprehensive(field_name: str, value: Any, field_config: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """Validate a single field with comprehensive error reporting"""
+        errors = []
+        field_type = field_config.get("type")
+        required = field_config.get("required", False)
+        label = field_config.get('label', field_name)
+        
+        # Check required fields
+        if required and (value is None or value == "" or (isinstance(value, list) and len(value) == 0)):
+            errors.append({
+                "field_path": field_name,
+                "error_type": "Required Field",
+                "message": f"'{label}' is required but is missing or empty",
+                "suggestion": f"Provide a value for {label}"
+            })
+            return errors  # Don't continue validation if required field is missing
+        
+        # Skip validation if field is optional and empty
+        if not required and (value is None or value == ""):
+            return errors
+        
+        # Type-specific validation
+        if field_type == "array":
+            array_errors = SubmissionHandler._validate_array_field_comprehensive(field_name, value, field_config)
+            errors.extend(array_errors)
+        elif field_type == "string":
+            string_errors = SubmissionHandler._validate_string_field_comprehensive(field_name, value, field_config)
+            errors.extend(string_errors)
+        elif field_type in ["number", "integer"]:
+            numeric_errors = SubmissionHandler._validate_numeric_field_comprehensive(field_name, value, field_config)
+            errors.extend(numeric_errors)
+        elif field_type == "boolean":
+            boolean_errors = SubmissionHandler._validate_boolean_field_comprehensive(field_name, value, field_config)
+            errors.extend(boolean_errors)
+        elif field_type == "date":
+            date_errors = SubmissionHandler._validate_date_field_comprehensive(field_name, value, field_config)
+            errors.extend(date_errors)
+        elif field_type == "enum":
+            enum_errors = SubmissionHandler._validate_enum_field_comprehensive(field_name, value, field_config)
+            errors.extend(enum_errors)
+        
+        return errors
+    
+    @staticmethod
+    def _validate_array_field_comprehensive(field_name: str, value: Any, field_config: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """Comprehensive validation for array fields"""
+        errors = []
+        label = field_config.get('label', field_name)
+        
+        # Check if value is actually an array
+        if not isinstance(value, list):
+            errors.append({
+                "field_path": field_name,
+                "error_type": "Type Error",
+                "message": f"'{label}' must be an array, got {type(value).__name__}",
+                "suggestion": "Ensure the field contains a JSON array (e.g., [\"item1\", \"item2\"])"
+            })
+            return errors
+        
+        items_config = field_config.get("items", {})
+        items_type = items_config.get("type")
+        
+        # Validate each item in the array
+        for i, item in enumerate(value):
+            item_path = f"{field_name}[{i}]"
+            
+            if items_type == "object":
+                # Validate object items
+                properties = items_config.get("properties", {})
+                if not isinstance(item, dict):
+                    errors.append({
+                        "field_path": item_path,
+                        "error_type": "Type Error",
+                        "message": f"Array item at {item_path} must be an object, got {type(item).__name__}",
+                        "suggestion": "Ensure array items are JSON objects with properties"
+                    })
+                    continue
+                
+                # Validate object properties
+                for prop_name, prop_config in properties.items():
+                    prop_path = f"{item_path}.{prop_name}"
+                    prop_value = item.get(prop_name)
+                    prop_errors = SubmissionHandler._validate_field_comprehensive(prop_path, prop_value, prop_config)
+                    errors.extend(prop_errors)
+            else:
+                # Validate scalar items
+                item_errors = SubmissionHandler._validate_scalar_item_comprehensive(item_path, item, items_config)
+                errors.extend(item_errors)
+        
+        return errors
+    
+    @staticmethod
+    def _validate_scalar_item_comprehensive(item_path: str, value: Any, items_config: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """Comprehensive validation for scalar array items"""
+        errors = []
+        item_type = items_config.get("type", "string")
+        
+        # Type validation with detailed messages
+        if item_type == "string":
+            if not isinstance(value, str):
+                errors.append({
+                    "field_path": item_path,
+                    "error_type": "Type Error",
+                    "message": f"Item at {item_path} must be a string, got {type(value).__name__}",
+                    "suggestion": "Ensure the value is enclosed in quotes"
+                })
+                return errors
+            
+            # String constraints
+            min_length = items_config.get("min_length")
+            if min_length is not None and len(value) < min_length:
+                errors.append({
+                    "field_path": item_path,
+                    "error_type": "Length Constraint",
+                    "message": f"Item at {item_path} must be at least {min_length} characters long, got {len(value)}",
+                    "suggestion": f"Add more characters to reach minimum length of {min_length}"
+                })
+            
+            max_length = items_config.get("max_length")
+            if max_length is not None and len(value) > max_length:
+                errors.append({
+                    "field_path": item_path,
+                    "error_type": "Length Constraint",
+                    "message": f"Item at {item_path} must be no more than {max_length} characters long, got {len(value)}",
+                    "suggestion": f"Shorten the text to {max_length} characters or less"
+                })
+            
+            pattern = items_config.get("pattern")
+            if pattern and value:
+                try:
+                    if not re.match(pattern, value):
+                        errors.append({
+                            "field_path": item_path,
+                            "error_type": "Pattern Constraint",
+                            "message": f"Item at {item_path} must match pattern '{pattern}', got '{value}'",
+                            "suggestion": f"Ensure the value follows the required pattern: {pattern}"
+                        })
+                except re.error:
+                    logger.error(f"Invalid regex pattern for item {item_path}: {pattern}")
+        
+        elif item_type in ["number", "integer"]:
+            try:
+                numeric_value = float(value) if item_type == "number" else int(value)
+            except (ValueError, TypeError):
+                errors.append({
+                    "field_path": item_path,
+                    "error_type": "Type Error",
+                    "message": f"Item at {item_path} must be a valid {item_type}, got '{value}'",
+                    "suggestion": f"Provide a numeric value (e.g., 42 for integer, 42.5 for number)"
+                })
+                return errors
+            
+            min_value = items_config.get("min_value")
+            if min_value is not None and numeric_value < min_value:
+                errors.append({
+                    "field_path": item_path,
+                    "error_type": "Range Constraint",
+                    "message": f"Item at {item_path} must be at least {min_value}, got {numeric_value}",
+                    "suggestion": f"Use a value of {min_value} or higher"
+                })
+            
+            max_value = items_config.get("max_value")
+            if max_value is not None and numeric_value > max_value:
+                errors.append({
+                    "field_path": item_path,
+                    "error_type": "Range Constraint",
+                    "message": f"Item at {item_path} must be no more than {max_value}, got {numeric_value}",
+                    "suggestion": f"Use a value of {max_value} or lower"
+                })
+        
+        elif item_type == "boolean":
+            if not isinstance(value, bool):
+                errors.append({
+                    "field_path": item_path,
+                    "error_type": "Type Error",
+                    "message": f"Item at {item_path} must be a boolean, got {type(value).__name__}",
+                    "suggestion": "Use true or false (without quotes)"
+                })
+        
+        elif item_type == "date":
+            if isinstance(value, str):
+                try:
+                    datetime.strptime(value, "%Y-%m-%d")
+                except ValueError:
+                    errors.append({
+                        "field_path": item_path,
+                        "error_type": "Format Error",
+                        "message": f"Item at {item_path} must be a valid date in YYYY-MM-DD format, got '{value}'",
+                        "suggestion": "Use format like '2024-01-15'"
+                    })
+            elif not isinstance(value, date):
+                errors.append({
+                    "field_path": item_path,
+                    "error_type": "Type Error",
+                    "message": f"Item at {item_path} must be a valid date, got {type(value).__name__}",
+                    "suggestion": "Use date format YYYY-MM-DD in quotes"
+                })
+        
+        elif item_type == "enum":
+            choices = items_config.get("choices", [])
+            if value not in choices:
+                choices_str = ', '.join(str(c) for c in choices)
+                errors.append({
+                    "field_path": item_path,
+                    "error_type": "Enum Constraint",
+                    "message": f"Item at {item_path} must be one of: {choices_str}, got '{value}'",
+                    "suggestion": f"Choose from the available options: {choices_str}"
+                })
+        
+        return errors
+    
+    @staticmethod
+    def _validate_string_field_comprehensive(field_name: str, value: Any, field_config: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """Comprehensive validation for string fields"""
+        errors = []
+        label = field_config.get('label', field_name)
+        
+        if not isinstance(value, str):
+            errors.append({
+                "field_path": field_name,
+                "error_type": "Type Error",
+                "message": f"'{label}' must be a string, got {type(value).__name__}",
+                "suggestion": "Enclose the value in quotes"
+            })
+            return errors
+        
+        # Apply same string validation as scalar items
+        string_errors = SubmissionHandler._validate_scalar_item_comprehensive(field_name, value, field_config)
+        return string_errors
+    
+    @staticmethod
+    def _validate_numeric_field_comprehensive(field_name: str, value: Any, field_config: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """Comprehensive validation for numeric fields"""
+        errors = []
+        label = field_config.get('label', field_name)
+        field_type = field_config.get('type', 'number')
+        
+        try:
+            numeric_value = float(value) if field_type == "number" else int(value)
+        except (ValueError, TypeError):
+            errors.append({
+                "field_path": field_name,
+                "error_type": "Type Error",
+                "message": f"'{label}' must be a valid {field_type}, got '{value}'",
+                "suggestion": f"Provide a numeric value (e.g., 42 for integer, 42.5 for number)"
+            })
+            return errors
+        
+        # Apply same numeric validation as scalar items
+        numeric_errors = SubmissionHandler._validate_scalar_item_comprehensive(field_name, numeric_value, field_config)
+        return numeric_errors
+    
+    @staticmethod
+    def _validate_boolean_field_comprehensive(field_name: str, value: Any, field_config: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """Comprehensive validation for boolean fields"""
+        errors = []
+        label = field_config.get('label', field_name)
+        
+        if not isinstance(value, bool):
+            errors.append({
+                "field_path": field_name,
+                "error_type": "Type Error",
+                "message": f"'{label}' must be a boolean, got {type(value).__name__}",
+                "suggestion": "Use true or false (without quotes)"
+            })
+        
+        return errors
+    
+    @staticmethod
+    def _validate_date_field_comprehensive(field_name: str, value: Any, field_config: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """Comprehensive validation for date fields"""
+        errors = []
+        label = field_config.get('label', field_name)
+        
+        if isinstance(value, str):
+            try:
+                datetime.strptime(value, "%Y-%m-%d")
+            except ValueError:
+                errors.append({
+                    "field_path": field_name,
+                    "error_type": "Format Error",
+                    "message": f"'{label}' must be a valid date in YYYY-MM-DD format, got '{value}'",
+                    "suggestion": "Use format like '2024-01-15'"
+                })
+        elif not isinstance(value, date):
+            errors.append({
+                "field_path": field_name,
+                "error_type": "Type Error",
+                "message": f"'{label}' must be a valid date, got {type(value).__name__}",
+                "suggestion": "Use date format YYYY-MM-DD in quotes"
+            })
+        
+        return errors
+    
+    @staticmethod
+    def _validate_enum_field_comprehensive(field_name: str, value: Any, field_config: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """Comprehensive validation for enum fields"""
+        errors = []
+        label = field_config.get('label', field_name)
+        choices = field_config.get('choices', [])
+        
+        if value not in choices:
+            choices_str = ', '.join(str(c) for c in choices)
+            errors.append({
+                "field_path": field_name,
+                "error_type": "Enum Constraint",
+                "message": f"'{label}' must be one of: {choices_str}, got '{value}'",
+                "suggestion": f"Choose from the available options: {choices_str}"
+            })
+        
+        return errors
+    
+    @staticmethod
+    def comprehensive_validate_data(data: Dict[str, Any], schema: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Comprehensive validation of data against schema with detailed error reporting
+        
+        Returns:
+            Dict with 'is_valid' boolean and 'errors' list with detailed error information
+        """
+        errors = []
+        fields = schema.get("fields", {})
+        
+        # Validate each field in the schema
+        for field_name, field_config in fields.items():
+            field_errors = SubmissionHandler._validate_field_comprehensive(field_name, data.get(field_name), field_config)
+            errors.extend(field_errors)
+        
+        return {
+            "is_valid": len(errors) == 0,
+            "errors": errors
+        }
     
     @staticmethod
     def _create_audit_entry(
