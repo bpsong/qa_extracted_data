@@ -179,13 +179,13 @@ class TestDiffUtils:
         """Test formatting diff for Streamlit components."""
         original = {"name": "John", "age": 30}
         modified = {"name": "Jane", "age": 31}
-        
+
         diff = calculate_diff(original, modified)
         changes = format_diff_for_streamlit(diff)
-        
+
         assert isinstance(changes, list)
         assert len(changes) > 0
-        
+
         # Check structure of change entries
         for change in changes:
             assert 'type' in change
@@ -193,7 +193,31 @@ class TestDiffUtils:
             assert 'old_value' in change
             assert 'new_value' in change
             assert 'icon' in change
-    
+
+    def test_nested_array_path_in_diff_formatters(self):
+        """Regression test ensuring nested array indices are preserved in formatted output."""
+        original = {
+            "line_items": [
+                {"description": "Widget", "amount": 10},
+                {"description": "Gadget", "amount": 5}
+            ]
+        }
+        modified = {
+            "line_items": [
+                {"description": "Updated Widget", "amount": 10},
+                {"description": "Gadget", "amount": 5}
+            ]
+        }
+
+        diff = calculate_diff(original, modified)
+
+        markdown = format_diff_for_display(diff, original, modified)
+        assert "line_items[0] → description" in markdown
+
+        streamlit_changes = format_diff_for_streamlit(diff)
+        fields = [change.get('field') for change in streamlit_changes if 'field' in change]
+        assert any(field == "line_items[0] → description" for field in fields)
+
     def test_format_diff_for_streamlit_no_changes(self):
         """Test formatting diff for Streamlit with no changes."""
         original = {"name": "John"}
