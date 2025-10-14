@@ -316,8 +316,7 @@ def format_diff_for_display(diff: Dict[str, Any], original_data: Optional[Dict[s
             if change is None:
                 # parse old/new from string representation if possible
                 s = str(path)
-                m = re.search(r"\['([^']+)'\]", s)
-                field_name = m.group(1) if m else s
+                field_name = _clean_path(path)
                 t_match = re.search(r"t1:([^,>]+),\s*t2:([^>]+)", s)
                 if t_match:
                     old_raw = t_match.group(1).strip().strip('"').strip()
@@ -508,9 +507,7 @@ def format_diff_for_streamlit(diff: Dict[str, Any]) -> List[Dict[str, Any]]:
             if change is None:
                 # parse simple t1/t2 from string
                 s = str(path)
-                import re
-                m = re.search(r"\['([^']+)'\]", s)
-                field = m.group(1) if m else s
+                field = _clean_path(path)
                 t_match = re.search(r"t1:([^,>]+),\s*t2:([^>]+)", s)
                 if t_match:
                     old_raw = t_match.group(1).strip().strip('"').strip()
@@ -550,11 +547,7 @@ def format_diff_for_streamlit(diff: Dict[str, Any]) -> List[Dict[str, Any]]:
                 })
         else:
             for path, _ in _iter_section(added):
-                # try extract actual value from modified_data by parsing path
-                # field name only
-                import re
-                m = re.search(r"\['([^']+)'\]", str(path))
-                field = m.group(1) if m else _clean_path(str(path))
+                field = _clean_path(path)
                 changes.append({
                     'type': 'Added',
                     'field': field,
@@ -577,8 +570,7 @@ def format_diff_for_streamlit(diff: Dict[str, Any]) -> List[Dict[str, Any]]:
                 })
         else:
             for path, _ in _iter_section(rem):
-                m = re.search(r"\['([^']+)'\]", str(path))
-                field = m.group(1) if m else _clean_path(str(path))
+                field = _clean_path(path)
                 changes.append({
                     'type': 'Removed',
                     'field': field,
@@ -792,6 +784,56 @@ def compare_json_files(file1_path: str, file2_path: str) -> Dict[str, Any]:
         return {}
 
 
+_PATH_TOKEN_PATTERN = re.compile(r"\['([^']+)'\]|\.([A-Za-z0-9_]+)|\[(\d+)\]|^([A-Za-z0-9_]+)")
+
+
+def _parse_deepdiff_path_tokens(path: Any) -> List[Any]:
+    """Parse a DeepDiff path into individual components (keys and indices)."""
+    if hasattr(path, "path"):
+        path_str = path.path()
+    else:
+        path_str = str(path)
+
+    path_str = path_str.strip()
+
+    # DeepDiff sometimes wraps the path with additional metadata like
+    # "<root['field'] t1:..., t2:...>". Extract just the path portion.
+    if path_str.startswith("<") and "root" in path_str:
+        start = path_str.find("root")
+        if start != -1:
+            # Stop at the first space (before t1/t2 metadata) or closing angle bracket
+            end = path_str.find(" ", start)
+            if end == -1:
+                end = path_str.find(">", start)
+            path_str = path_str[start:end] if end != -1 else path_str[start:]
+
+    # Focus on the actual root path if additional wrappers precede it (e.g., SetOrdered strings)
+    root_index = path_str.find("root")
+    if root_index > 0:
+        path_str = path_str[root_index:]
+
+    # Normalize our custom arrow separator back to dot notation for parsing
+    path_str = path_str.replace(" → ", ".")
+
+    tokens: List[Any] = []
+    for match in _PATH_TOKEN_PATTERN.findall(path_str):
+        key, dot_key, index, start_key = match
+        if key:
+            tokens.append(key)
+        elif dot_key:
+            if dot_key != "root":
+                tokens.append(dot_key)
+        elif index:
+            try:
+                tokens.append(int(index))
+            except ValueError:
+                tokens.append(index)
+        elif start_key and start_key != "root":
+            tokens.append(start_key)
+
+    return tokens
+
+
 def _clean_path(path: str) -> str:
     """
     Clean up DeepDiff path for display.
@@ -802,27 +844,30 @@ def _clean_path(path: str) -> str:
     Returns:
         Cleaned path string
     """
-    if isinstance(path, str):
-        import re
-        # Try to extract just the field name if it's a DeepDiff path format
-        match = re.search(r"\['([^']+)'\]", path)
-        if match:
-            return match.group(1)
+    tokens = _parse_deepdiff_path_tokens(path)
 
-        # Clean up standard path format
-        cleaned = path.replace("root", "").replace("['", "").replace("']", "").replace("[", "").replace("]", "")
+    if tokens:
+        display_parts: List[str] = []
+        for token in tokens:
+            if isinstance(token, int):
+                if display_parts:
+                    display_parts[-1] += f"[{token}]"
+                else:
+                    display_parts.append(f"[{token}]")
+            else:
+                display_parts.append(str(token))
+        return " → ".join(display_parts) if display_parts else "root"
 
-        # Handle nested paths
-        if cleaned.startswith("."):
-            cleaned = cleaned[1:]
-
-        # Replace dots with arrows for nested fields
-        if "." in cleaned:
-            parts = cleaned.split(".")
-            cleaned = " → ".join(parts)
-
-        return cleaned or "root"
-    return str(path)  # Handle non-string paths
+    # Fallback to string conversion for unusual paths that couldn't be parsed
+    path_str = path.path() if hasattr(path, "path") else str(path)
+    path_str = path_str.replace("root", "", 1).lstrip(".").strip()
+    if " → " in path_str:
+        return path_str
+    if "." in path_str:
+        parts = [part for part in path_str.split(".") if part]
+        if parts:
+            return " → ".join(parts)
+    return path_str or "root"
 
 
 def _format_value(value: Any, max_length: int = 100) -> str:
@@ -1010,23 +1055,34 @@ def _extract_value_from_data(path: str, data: Dict[str, Any]) -> Any:
         The value if found, None otherwise
     """
     try:
-        # Parse the path to extract the key
-        # Handle paths like "root['Currency']" or "root.Currency"
-        if "root['" in path and "']" in path:
-            # Extract key from root['key'] format
-            start = path.find("['") + 2
-            end = path.find("']", start)
-            if start > 1 and end > start:
-                key = path[start:end]
-                return data.get(key)
-        elif "root." in path:
-            # Handle root.key format
-            key = path.replace("root.", "")
-            return data.get(key)
-        else:
-            # Try to clean the path and use it as key
-            key = _clean_path(path)
-            return data.get(key)
+        tokens = _parse_deepdiff_path_tokens(path)
+
+        # If we couldn't parse any tokens, fall back to direct lookups using
+        # the raw path or cleaned representation.
+        if not tokens:
+            if isinstance(path, str) and path in data:
+                return data.get(path)
+
+            cleaned = _clean_path(path)
+            if cleaned in data:
+                return data.get(cleaned)
+
+            return None
+
+        current: Any = data
+        for token in tokens:
+            if isinstance(token, int):
+                if isinstance(current, list) and 0 <= token < len(current):
+                    current = current[token]
+                else:
+                    return None
+            else:
+                if isinstance(current, dict):
+                    current = current.get(token)
+                else:
+                    return None
+
+        return current
 
     except Exception as e:
         logger.debug(f"Could not extract value from path {path}: {e}")
