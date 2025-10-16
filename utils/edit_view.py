@@ -481,15 +481,28 @@ class EditView:
                                 else:
                                     # Special handling for date fields
                                     if field_type == 'date':
-                                        from datetime import datetime
-                                        # If value is string, try to parse it
-                                        if isinstance(value, str):
-                                            try:
-                                                parsed_date = datetime.strptime(value, "%Y/%m/%d").date()
-                                                st.session_state[widget_key] = parsed_date
-                                            except ValueError:
+                                        from datetime import datetime, date
+                                        try:
+                                            if isinstance(value, str):
+                                                from dateutil import parser
+                                                st.session_state[widget_key] = parser.parse(value).date()
+                                            elif isinstance(value, datetime):
+                                                st.session_state[widget_key] = value.date()
+                                            elif isinstance(value, date):
                                                 st.session_state[widget_key] = value
-                                        else:
+                                            else:
+                                                st.session_state[widget_key] = value
+                                        except Exception:
+                                            st.session_state[widget_key] = value
+                                    elif field_type == 'datetime':
+                                        from datetime import datetime
+                                        try:
+                                            if isinstance(value, str):
+                                                from dateutil import parser
+                                                st.session_state[widget_key] = parser.parse(value)
+                                            else:
+                                                st.session_state[widget_key] = value
+                                        except Exception:
                                             st.session_state[widget_key] = value
                                     else:
                                         st.session_state[widget_key] = value

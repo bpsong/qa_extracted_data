@@ -3,6 +3,7 @@ Dynamic form generator for JSON QA webapp.
 Creates Streamlit forms based on schema definitions and Pydantic models.
 """
 
+import copy
 import streamlit as st
 import json
 from datetime import datetime, date
@@ -35,6 +36,7 @@ class FormGenerator:
         # Update session state with the field key
         field_key = f"field_{field_name}"
         st.session_state[field_key] = array_value
+        st.session_state[f"scalar_array_{field_name}_size"] = len(array_value)
         
         # Update form data in SessionManager
         current_form_data = SessionManager.get_form_data()
@@ -460,15 +462,36 @@ class FormGenerator:
                     hydrated_value = datetime.combine(hydrated_value, datetime.min.time())
                 
             # Handle session state
-            if widget_key in st.session_state:
-                value_to_use = st.session_state[widget_key]
-            else:
-                value_to_use = hydrated_value
-                st.session_state[widget_key] = value_to_use
+            if widget_key not in st.session_state:
+                if isinstance(hydrated_value, list):
+                    st.session_state[widget_key] = hydrated_value.copy()
+                elif isinstance(hydrated_value, dict):
+                    st.session_state[widget_key] = hydrated_value.copy()
+                else:
+                    st.session_state[widget_key] = hydrated_value
+            
+            session_value = st.session_state.get(widget_key)
+            
+            if field_type == 'date' and isinstance(session_value, str):
+                try:
+                    from dateutil import parser
+                    session_value = parser.parse(session_value).date()
+                    st.session_state[widget_key] = session_value
+                except Exception as e:
+                    logger.warning(f"Failed to normalize date string in session state for '{field_name}': {e}")
+            elif field_type == 'datetime' and isinstance(session_value, str):
+                try:
+                    from dateutil import parser
+                    session_value = parser.parse(session_value)
+                    st.session_state[widget_key] = session_value
+                except Exception as e:
+                    logger.warning(f"Failed to normalize datetime string in session state for '{field_name}': {e}")
+            
+            widget_kwargs.pop('value', None)
+
+            value_to_use = session_value
             
             logger.debug(f"[_render_field] Field: {field_name}, Widget Key: {widget_key}, Value to Use: {value_to_use}, Session State Value: {st.session_state.get(widget_key)}")
-            
-            widget_kwargs['value'] = value_to_use
             
             # Determine widget type
             if field_type == 'string':
@@ -745,52 +768,88 @@ class FormGenerator:
         
         # Use field-specific keys to prevent state leakage between forms
         field_key = f"scalar_array_{field_name}"
-        removal_key = f"{field_key}_remove_item"
-        add_key = f"{field_key}_add_item"
-        
-        # Initialize removal state if not exists
-        if removal_key not in st.session_state:
-            st.session_state[removal_key] = None
-        
-        # Initialize add state for better button handling
-        if add_key not in st.session_state:
-            st.session_state[add_key] = False
+        action_key = f"{field_key}_action"
+        target_index_key = f"{field_key}_target_index"
         
         # Container for the array editor
         with st.container():
             st.markdown(f"**{field_config.get('label', field_name)}** ({item_type} array)")
-            st.caption("Edit values below. To add items, increase the count. To remove items, clear the value and decrease the count.")
+            st.caption("Edit values below. Use the array action controls to add, remove, or duplicate items, then apply the change.")
             
-            # Number input to control array size (form-compatible)
-            array_size_key = f"{field_key}_size"
-            current_size = len(working_array)
-            
-            desired_size = st.number_input(
-                f"Number of items",
-                min_value=0,
-                max_value=100,
-                value=current_size,
-                step=1,
-                key=array_size_key,
-                help="Adjust the number of items in the array"
+            action_choices = [
+                ("none", "-- Select action --"),
+                ("add", "Add new item"),
+                ("remove", "Remove selected item"),
+                ("duplicate", "Duplicate selected item")
+            ]
+            action_lookup = {value: label for value, label in action_choices}
+            action_values = [value for value, _ in action_choices]
+
+            def format_action_choice(choice: str) -> str:
+                return action_lookup.get(choice, str(choice))
+
+            selected_action = st.selectbox(
+                "Array action",
+                options=action_values,
+                format_func=format_action_choice,
+                key=action_key,
+                help="Choose an action to apply to this array"
             )
             
-            # Adjust array size based on user input
-            size_changed = False
-            if desired_size > current_size:
-                # Add new items
-                for _ in range(desired_size - current_size):
+            target_index = None
+            requires_index = selected_action in {"remove", "duplicate"}
+            if requires_index and working_array:
+                target_index = st.selectbox(
+                    "Target item",
+                    options=list(range(len(working_array))),
+                    format_func=lambda idx: f"Index {idx}: {working_array[idx]!r}",
+                    key=target_index_key,
+                    help="Select which item the action should target"
+                )
+            elif requires_index:
+                if target_index_key in st.session_state:
+                    del st.session_state[target_index_key]
+                st.info("No items available for the selected action.")
+            elif target_index_key in st.session_state:
+                del st.session_state[target_index_key]
+            
+            apply_action = st.form_submit_button(
+                f"Apply to {field_config.get('label', field_name)}",
+                key=f"{field_key}_apply_action"
+            )
+            
+            if apply_action:
+                action_performed = False
+                if selected_action == "add":
                     default_value = FormGenerator._get_default_value_for_type(item_type, items_config)
                     working_array.append(default_value)
-                size_changed = True
-            elif desired_size < current_size:
-                # Remove items from the end
-                working_array = working_array[:desired_size]
-                size_changed = True
-            
-            # Synchronize array to session after size changes
-            if size_changed:
-                FormGenerator._sync_array_to_session(field_name, working_array)
+                    st.success(f"Added new item at index {len(working_array) - 1}")
+                    action_performed = True
+                elif selected_action == "remove":
+                    if working_array and target_index is not None:
+                        removed_value = working_array.pop(target_index)
+                        st.success(f"Removed item {target_index}: {removed_value!r}")
+                        action_performed = True
+                    else:
+                        st.warning("Select an item to remove.")
+                elif selected_action == "duplicate":
+                    if working_array and target_index is not None:
+                        try:
+                            duplicated_value = copy.deepcopy(working_array[target_index])
+                        except Exception:
+                            duplicated_value = working_array[target_index]
+                        insert_at = target_index + 1
+                        working_array.insert(insert_at, duplicated_value)
+                        st.success(f"Duplicated item {target_index} to index {insert_at}")
+                        action_performed = True
+                    else:
+                        st.warning("Select an item to duplicate.")
+                else:
+                    st.info("Select an action before applying.")
+                
+                if action_performed:
+                    FormGenerator._sync_array_to_session(field_name, working_array)
+                    st.rerun()
             
             # Render existing items
             for i in range(len(working_array)):
