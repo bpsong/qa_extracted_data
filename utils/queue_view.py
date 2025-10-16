@@ -117,7 +117,11 @@ class QueueView:
         with col3:
             # Refresh button
             if st.button("🔄 Refresh", help="Refresh file list and cleanup stale locks (Ctrl+R)", key="queue_refresh_btn"):
-                cleanup_stale_locks(SessionManager.get_lock_timeout())
+                # Clear any potential caches
+                if hasattr(st, 'cache_data'):
+                    st.cache_data.clear()
+                # More aggressive cleanup - remove all stale locks
+                cleanup_stale_locks(1)  # Clean locks older than 1 minute
                 st.rerun()
         
         # Store filter settings in session state
@@ -633,6 +637,11 @@ class QueueView:
             
             if release_file(filename):
                 st.success(f"✅ Force released {filename}")
+                # Clear any potential caches
+                if hasattr(st, 'cache_data'):
+                    st.cache_data.clear()
+                # Force cleanup of stale locks
+                cleanup_stale_locks(SessionManager.get_lock_timeout())
                 st.rerun()
             else:
                 st.error(f"❌ Failed to force release {filename}")
@@ -640,6 +649,30 @@ class QueueView:
         except Exception as e:
             st.error(f"Error force releasing file: {str(e)}")
             logger.error(f"Error force releasing file {filename}: {e}", exc_info=True)
+    
+    @staticmethod
+    def get_file_type_counts(files: List[Dict[str, Any]], use_optimized: bool = True) -> Dict[str, int]:
+        """
+        Get counts of files by type.
+        
+        Args:
+            files: List of file information dictionaries
+            use_optimized: Whether to use optimized counting (unused, for compatibility)
+            
+        Returns:
+            Dictionary mapping file type keys to counts
+        """
+        counts = {'all': len(files)}
+        
+        for file_info in files:
+            filename = file_info.get('filename', '')
+            file_type = QueueView._get_file_type(filename)
+            
+            if file_type not in counts:
+                counts[file_type] = 0
+            counts[file_type] += 1
+        
+        return counts
     
     @staticmethod
     def render_queue_stats():
@@ -660,11 +693,19 @@ class QueueView:
             filter_counts = QueueView.get_file_type_counts(files, use_optimized=False)
             
             # Convert filter keys to display names for backward compatibility
+            type_display_names = {
+                'json': 'JSON Files',
+                'pdf': 'PDF Files',
+                'image': 'Image Files',
+                'text': 'Text Files',
+                'other': 'Other Files'
+            }
+            
             type_counts = {}
             for filter_key, count in filter_counts.items():
                 if filter_key == 'all':
                     continue
-                display_name = QueueFilterConfig.get_file_type_display_name(filter_key)
+                display_name = type_display_names.get(filter_key, filter_key.title())
                 if count > 0:  # Only show types that have files
                     type_counts[display_name] = count
             

@@ -271,19 +271,26 @@ class EditView:
         st.subheader("🔍 Changes Preview")
         
         try:
-            original_data = SessionManager.get_original_data()
-            form_data = SessionManager.get_form_data()
-
             current_file = SessionManager.get_current_file()
+            schema = SessionManager.get_schema()
+            
             # Reload original data from JSON file to ensure fresh data
             original_data = load_json_file(current_file) if current_file else None
-            form_data = SessionManager.get_form_data()
+            
+            # Collect ALL current form values from session state
+            # This ensures we capture all accumulated changes across multiple field edits
+            if schema:
+                form_data = FormGenerator.collect_current_form_data(schema)
+                # Update SessionManager with collected data before diff calculation
+                SessionManager.set_form_data(form_data)
+            else:
+                form_data = SessionManager.get_form_data()
             
             if not original_data or not form_data:
                 Notify.info("No data to compare")
                 return
             
-            # Calculate diff
+            # Calculate diff with all accumulated changes
             diff = calculate_diff(original_data, form_data)
             
             if has_changes(diff):
@@ -440,13 +447,21 @@ class EditView:
                     if str(key).startswith('array_') or str(key).startswith('json_array_'):
                         del st.session_state[key]
                 
-                # Clear new array editor keys introduced by enhanced array support
-                for key in list(st.session_state.keys()):
-                    if (str(key).startswith('scalar_array_') or 
-                        str(key).startswith('data_editor_') or 
-                        str(key).startswith('delete_row_') or
-                        str(key).startswith('add_row_')):
-                        del st.session_state[key]
+                # Clear all array editor widget keys (comprehensive clearing)
+                # This includes: scalar_array_*, data_editor_*, delete_row_*, add_row_*
+                # and individual item keys like scalar_array_{field_name}_item_{index}
+                keys_to_clear = []
+                for key in st.session_state.keys():
+                    key_str = str(key)
+                    if (key_str.startswith('scalar_array_') or 
+                        key_str.startswith('data_editor_') or 
+                        key_str.startswith('delete_row_') or
+                        key_str.startswith('add_row_')):
+                        keys_to_clear.append(key)
+                
+                # Clear collected keys
+                for key in keys_to_clear:
+                    del st.session_state[key]
                 
                 # Update widget-level session state keys with original values
                 def update_widget_keys(data, schema, prefix=''):
@@ -484,6 +499,26 @@ class EditView:
                 # Update all widget keys with the original data using schema
                 fields_schema = schema.get('fields', {})
                 update_widget_keys(original_data, fields_schema)
+                
+                # Array-specific reset logic: identify and reset array fields
+                for field_name, field_config in fields_schema.items():
+                    if field_config.get('type') == 'array':
+                        original_array = original_data.get(field_name, [])
+                        
+                        # Reset field_{field_name} to original array value
+                        st.session_state[f"field_{field_name}"] = original_array
+                        
+                        # Reset scalar array size widget to original length
+                        st.session_state[f"scalar_array_{field_name}_size"] = len(original_array)
+                        
+                        # For object arrays, reset data_editor state
+                        items_config = field_config.get('items', {})
+                        if items_config.get('type') == 'object':
+                            st.session_state[f"data_editor_{field_name}"] = original_array
+                
+                # Force form data synchronization after all session state updates
+                # This ensures diff calculation sees the reset state immediately
+                SessionManager.set_form_data(original_data.copy())
                 
                 Notify.success("🔄 Form reset to original data")
                 st.rerun()

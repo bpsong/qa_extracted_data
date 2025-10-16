@@ -19,21 +19,44 @@ from utils.ui_feedback import Notify
 # Configure logging
 logger = logging.getLogger(__name__)
 
-def _sanitize_for_json(obj: Any) -> Any:
+def _sanitize_for_json(obj: Any, parent_key: str = None) -> Any:
     """
     Recursively sanitize an object for JSON serialization.
     Converts date, datetime to ISO format strings and Decimal to float.
+    Preserves floats for money fields even if they're whole numbers (e.g., 862.00 stays as 862.0).
     """
     if isinstance(obj, dict):
-        return {k: _sanitize_for_json(v) for k, v in obj.items()}
+        return {k: _sanitize_for_json(v, k) for k, v in obj.items()}
     elif isinstance(obj, list):
-        return [_sanitize_for_json(item) for item in obj]
+        return [_sanitize_for_json(item, parent_key) for item in obj]
     elif isinstance(obj, (datetime, date)):
         return obj.isoformat()
     elif isinstance(obj, Decimal):
         return float(obj)
+    elif isinstance(obj, float):
+        # Fix floating point precision issues (e.g., 242.98000000000002 → 242.98)
+        # Round to 10 decimal places to remove tiny floating point errors
+        rounded = round(obj, 10)
+        
+        # Check if this is a money field - if so, always keep as float
+        if parent_key and _is_money_field_name(parent_key):
+            return rounded  # Keep as float even if it's 862.0
+        
+        # For non-money fields, convert whole numbers to integers
+        if rounded == int(rounded):
+            return int(rounded)
+        return rounded
     else:
         return obj
+
+
+def _is_money_field_name(field_name: str) -> bool:
+    """Check if a field name suggests it's a money field."""
+    if not field_name:
+        return False
+    name = field_name.lower()
+    money_tokens = ['amount', 'amt', 'price', 'cost', 'subtotal', 'tax', 'gst', 'vat', 'total']
+    return any(token in name for token in money_tokens)
 
 
 class SubmissionHandler:
@@ -115,11 +138,11 @@ class SubmissionHandler:
                 logger.error(error_msg)
                 return False, [error_msg]
             
-            # Step 5: Create and log audit entry
+            # Step 5: Create and log audit entry (use sanitized data for clean audit logs)
             deprecated = st.session_state.get("deprecated_fields_current_doc", [])
             schema_version = st.session_state.get("schema_version")
             audit_success = SubmissionHandler._create_audit_entry(
-                filename, original_data, form_data, user, diff, deprecated, schema_version
+                filename, original_data, sanitized_data, user, diff, deprecated, schema_version
             )
             
             if not audit_success:

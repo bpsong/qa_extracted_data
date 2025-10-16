@@ -1,0 +1,73 @@
+title: Insurance Document with Serial Numbers
+description: Schema for insurance documents with scalar array support for serial numbers
+
+fields:
+  Supplier name:
+    type: string
+    label: Supplier Name
+    required: true
+    min_length: 2
+    max_length: 200
+    help: Name of the insurance supplier
+    
+  Client name:
+    type: string
+    label: Client Name
+    required: true
+    min_length: 2
+    max_length: 200
+    help: Name of the client
+    
+  Client:
+    type: string
+    label: Client Address
+    required: false
+    max_length: 500
+    help: Client address information
+    
+  Invoice amount:
+    type: number
+    label: Invoice Amount
+    required: true
+    min_value: 0.01
+    help: Total invoice amount
+    
+  Insurance Start date:
+    type: date
+    label: Insurance Start Date
+    required: true
+    help: Start date of insurance coverage
+    
+  Insurance End date:
+    type: date
+    label: Insurance End Date
+    required: true
+    help: End date of insurance coverage
+    
+  Policy Number:
+    type: string
+    label: Policy Number
+    required: true
+    min_length: 5
+    max_length: 50
+    help: Unique insurance policy number
+    
+  Serial Numbers:
+    type: array
+    label: Serial Numbers
+    required: false
+    help: List of covered item serial numbers
+    items:
+      type: string
+      min_length: 1
+      max_length: 50
+      
+  Invoice type:
+    type: enum
+    label: Invoice Type
+    required: false
+    choices:
+      - debit
+      - credit
+    default: debit
+    help: Type of invoice (debit or credit)

@@ -35,8 +35,18 @@ def _format_value_for_field(value: Any, field_name: str) -> str:
     - Else fallback to _format_value (generic pretty printer).
     """
     try:
-        if isinstance(value, (int, float)) and _is_money_field(field_name):
-            return f"{float(value):.2f}"
+        if isinstance(value, (int, float)):
+            # Check if it's a money field
+            if _is_money_field(field_name):
+                return f"{float(value):.2f}"
+            # For other numeric fields, clean up floating point precision issues
+            elif isinstance(value, float):
+                # Round to reasonable precision to avoid 242.98000000000002
+                rounded = round(value, 10)  # Remove tiny floating point errors
+                if rounded == int(rounded):
+                    return str(int(rounded))
+                else:
+                    return f"{rounded:g}"  # Use 'g' format to avoid unnecessary decimals
     except Exception:
         pass
     return _format_value(value)
@@ -290,7 +300,8 @@ def format_diff_for_display(diff: Dict[str, Any], original_data: Optional[Dict[s
                 items = re.findall(r"<root\[[^\]]+\][^>]*>", s)
                 if items:
                     for item in items:
-                        # each item behaves like a single-path change; value is None
+                        # Preserve the raw DeepDiff entry so downstream formatting can
+                        # recover both the field name and the before/after values.
                         yield item, None
                     return
 
@@ -335,9 +346,11 @@ def format_diff_for_display(diff: Dict[str, Any], original_data: Optional[Dict[s
                 old_value = _format_value_for_field(raw_old_value, field_name)
                 new_value = _format_value_for_field(raw_new_value, field_name)
 
-            formatted_lines.append(f"**{field_name}:**")
-            formatted_lines.append(f"  - ❌ **Before:** `{old_value}`")
-            formatted_lines.append(f"  - ✅ **After:** `{new_value}`")
+            # Show all changes except when both old and new are exactly the same
+            if str(old_value) != str(new_value):
+                formatted_lines.append(f"**{field_name}:**")
+                formatted_lines.append(f"  - ❌ **Before:** `{old_value}`")
+                formatted_lines.append(f"  - ✅ **After:** `{new_value}`")
             formatted_lines.append("")
 
     if 'dictionary_item_added' in diff:
@@ -378,46 +391,70 @@ def format_diff_for_display(diff: Dict[str, Any], original_data: Optional[Dict[s
                 formatted_lines.append(f"**{field_name}:** `[Removed]`")
         formatted_lines.append("")
 
+    # Handle array changes with simple before/after display
+    array_changes = {}
+    
+    # Collect array field names that have changes
     if 'iterable_item_added' in diff:
-        formatted_lines.append("### 📋 **Added List Items**")
         added_sec = diff.get('iterable_item_added')
         if isinstance(added_sec, dict):
-            for path, items in added_sec.items():
+            for path in added_sec.keys():
                 field_name = _clean_path(path)
-                formatted_lines.append(f"**{field_name}:**")
-                if isinstance(items, dict):
-                    for index, value in items.items():
-                        formatted_value = _format_value(value)
-                        formatted_lines.append(f"  - Added at position {index}: `{formatted_value}`")
-                else:
-                    formatted_value = _format_value(items)
-                    formatted_lines.append(f"  - Added: `{formatted_value}`")
-        else:
-            for path, _ in _iter_deepdiff_section(added_sec):
-                field_name = _clean_path(str(path))
-                formatted_lines.append(f"**{field_name}:**")
-                formatted_lines.append("  - Added")
-        formatted_lines.append("")
-
+                if field_name not in array_changes:
+                    array_changes[field_name] = True
+        elif isinstance(added_sec, str):
+            # Handle string format from serialized diffs
+            # Extract field names from paths like "<root['Serial Numbers'][0]"
+            field_matches = re.findall(r"root\['([^']+)'\]", added_sec)
+            for field_name in set(field_matches):
+                if field_name not in array_changes:
+                    array_changes[field_name] = True
+        elif added_sec is not None and hasattr(added_sec, '__iter__'):
+            # Handle list/set format
+            for item in added_sec:
+                path_str = str(item)
+                field_name = _clean_path(path_str)
+                if field_name not in array_changes:
+                    array_changes[field_name] = True
+    
     if 'iterable_item_removed' in diff:
-        formatted_lines.append("### 🗑️ **Removed List Items**")
         removed_sec = diff.get('iterable_item_removed')
         if isinstance(removed_sec, dict):
-            for path, items in removed_sec.items():
+            for path in removed_sec.keys():
                 field_name = _clean_path(path)
-                formatted_lines.append(f"**{field_name}:**")
-                if isinstance(items, dict):
-                    for index, value in items.items():
-                        formatted_value = _format_value(value)
-                        formatted_lines.append(f"  - Removed from position {index}: `{formatted_value}`")
-                else:
-                    formatted_value = _format_value(items)
-                    formatted_lines.append(f"  - Removed: `{formatted_value}`")
-        else:
-            for path, items in _iter_deepdiff_section(removed_sec):
-                field_name = _clean_path(str(path))
-                formatted_lines.append(f"**{field_name}:**")
-                formatted_lines.append("  - Removed")
+                if field_name not in array_changes:
+                    array_changes[field_name] = True
+        elif isinstance(removed_sec, str):
+            # Handle string format from serialized diffs
+            field_matches = re.findall(r"root\['([^']+)'\]", removed_sec)
+            for field_name in set(field_matches):
+                if field_name not in array_changes:
+                    array_changes[field_name] = True
+        elif removed_sec is not None and hasattr(removed_sec, '__iter__'):
+            # Handle list/set format
+            for item in removed_sec:
+                path_str = str(item)
+                field_name = _clean_path(path_str)
+                if field_name not in array_changes:
+                    array_changes[field_name] = True
+    
+    # Display array changes with simple before/after format
+    if array_changes:
+        formatted_lines.append("### 📋 **Array Changes**")
+        source_original: Dict[str, Any] = original_data if isinstance(original_data, dict) else {}
+        source_modified: Dict[str, Any] = modified_data if isinstance(modified_data, dict) else {}
+        for field_name in array_changes.keys():
+            # Get before and after values from original and modified data
+            before_value = source_original.get(field_name, [])
+            after_value = source_modified.get(field_name, [])
+            
+            # Format as simple lists
+            before_str = ', '.join([str(v) for v in before_value]) if before_value else '(empty)'
+            after_str = ', '.join([str(v) for v in after_value]) if after_value else '(empty)'
+            
+            formatted_lines.append(f"**{field_name}:**")
+            formatted_lines.append(f"  - ❌ **Before:** `[{before_str}]`")
+            formatted_lines.append(f"  - ✅ **After:** `[{after_str}]`")
         formatted_lines.append("")
 
     if 'type_changes' in diff:
@@ -707,6 +744,32 @@ def get_change_summary(diff: Dict[str, Any]) -> Dict[str, int]:
     if 'dictionary_item_removed' in diff:
         removed_items = diff['dictionary_item_removed']
         summary['removed'] = len(removed_items) if hasattr(removed_items, '__len__') else 0
+    
+    # BUGFIX: Count array/iterable changes
+    if 'iterable_item_added' in diff:
+        iterable_added = diff['iterable_item_added']
+        if isinstance(iterable_added, str):
+            # Handle serialized format
+            import re
+            # Count occurrences of root paths
+            path_matches = re.findall(r'<root\[', iterable_added)
+            summary['added'] += len(path_matches)
+        elif hasattr(iterable_added, '__len__'):
+            summary['added'] += len(iterable_added)
+        else:
+            summary['added'] += 1
+    
+    if 'iterable_item_removed' in diff:
+        iterable_removed = diff['iterable_item_removed']
+        if isinstance(iterable_removed, str):
+            # Handle serialized format
+            import re
+            path_matches = re.findall(r'<root\[', iterable_removed)
+            summary['removed'] += len(path_matches)
+        elif hasattr(iterable_removed, '__len__'):
+            summary['removed'] += len(iterable_removed)
+        else:
+            summary['removed'] += 1
 
     if 'type_changes' in diff:
         summary['type_changed'] = len(diff['type_changes'])
@@ -834,7 +897,7 @@ def _parse_deepdiff_path_tokens(path: Any) -> List[Any]:
     return tokens
 
 
-def _clean_path(path: str) -> str:
+def _clean_path(path: Any) -> str:
     """
     Clean up DeepDiff path for display.
 
@@ -844,6 +907,15 @@ def _clean_path(path: str) -> str:
     Returns:
         Cleaned path string
     """
+    # Handle the ugly format directly first
+    path_str = str(path)
+    if "root['" in path_str and "t1:" in path_str:
+        # Extract field name from ugly format like "<root['Supplier name'] t1:..., t2:...>"
+        import re
+        field_match = re.search(r"root\['([^']+)'\]", path_str)
+        if field_match:
+            return field_match.group(1)
+    
     tokens = _parse_deepdiff_path_tokens(path)
 
     if tokens:

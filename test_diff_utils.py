@@ -174,7 +174,22 @@ class TestDiffUtils:
         assert "SGD" in formatted
         assert "Before:** `None`" in formatted
         assert "After:** `SGD`" in formatted
-    
+
+    def test_format_diff_for_display_serialized_values_changed(self):
+        """Ensure serialized SetOrdered values_changed entries keep before/after values."""
+        original = {"Pay": True, "Currency": "NZD"}
+        modified = {"Pay": False, "Currency": "AUD"}
+
+        diff = calculate_diff(original, modified)
+        diff["values_changed"] = str(diff["values_changed"])
+
+        formatted = format_diff_for_display(diff, original, modified)
+
+        assert "Modified Fields" in formatted
+        assert "**Pay:**" in formatted
+        assert "Before:** `True`" in formatted
+        assert "After:** `False`" in formatted
+
     def test_format_diff_for_streamlit(self):
         """Test formatting diff for Streamlit components."""
         original = {"name": "John", "age": 30}

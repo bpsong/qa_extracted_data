@@ -1,4 +1,32 @@
 
+app:
+  name: "JSON QA Web Application"
+  version: "1.0.0"
+
+directories:
+  json_docs: "json_docs"
+  corrected: "corrected"
+  pdf_docs: "pdf_docs"
+  schemas: "schemas"
+  audits: "audits"
+  locks: "locks"
+
+schema:
+  primary_schema: "insurance_with_serial_numbers.yaml"
+  fallback_schema: "default_schema.yaml"
+  validation_timeout: 30
+
+ui:
+  page_title: "JSON QA Tool"
+  page_icon: "📋"
+  layout: "wide"
+  sidebar_state: "expanded"
+
 logging:
   level: "DEBUG"
   format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+
+processing:
+  max_file_size_mb: 10
+  lock_timeout_minutes: 30
+  auto_cleanup_locks: true

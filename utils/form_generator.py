@@ -20,6 +20,102 @@ class FormGenerator:
     """Generates dynamic forms based on schemas and handles form data."""
     
     @staticmethod
+    def _sync_array_to_session(field_name: str, array_value: List[Any]) -> None:
+        """
+        Synchronize array value to session state and SessionManager form data.
+        
+        This helper ensures that array modifications are immediately reflected in both
+        the session state and the SessionManager's form data, enabling proper diff
+        calculation and state management.
+        
+        Args:
+            field_name: Name of the array field
+            array_value: Updated array value to synchronize
+        """
+        # Update session state with the field key
+        field_key = f"field_{field_name}"
+        st.session_state[field_key] = array_value
+        
+        # Update form data in SessionManager
+        current_form_data = SessionManager.get_form_data()
+        current_form_data[field_name] = array_value
+        SessionManager.set_form_data(current_form_data)
+        
+        logger.debug(f"[_sync_array_to_session] Synchronized {field_name}: {len(array_value)} items")
+    
+    @staticmethod
+    def _collect_array_data_from_widgets(schema: Dict[str, Any], form_data: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Collect array data from individual widget keys after form submission.
+        
+        Inside Streamlit forms, widget values are only available in session_state AFTER
+        the form is submitted. This method reads the actual submitted values from individual
+        array item widgets and updates the form_data accordingly.
+        
+        Args:
+            schema: Schema definition
+            form_data: Form data collected during rendering (may have stale array values)
+            
+        Returns:
+            Updated form data with current array values from widgets
+        """
+        fields = schema.get('fields', {})
+        
+        for field_name, field_config in fields.items():
+            field_type = field_config.get('type', 'string')
+            
+            if field_type == 'array':
+                items_config = field_config.get('items', {})
+                item_type = items_config.get('type', 'string')
+                
+                # For scalar arrays, collect from individual item widgets
+                if item_type != 'object':
+                    field_key = f"scalar_array_{field_name}"
+                    size_key = f"{field_key}_size"
+                    
+                    # DEBUG: Log what we're looking for
+                    logger.info(f"[DEBUG] Looking for array field: {field_name}")
+                    logger.info(f"[DEBUG] Size key: {size_key}")
+                    logger.info(f"[DEBUG] Size key in session_state: {size_key in st.session_state}")
+                    
+                    # Get the array size from session state
+                    if size_key in st.session_state:
+                        array_size = st.session_state[size_key]
+                        logger.info(f"[DEBUG] Array size: {array_size}")
+                        
+                        collected_array = []
+                        
+                        # Collect values from individual item widgets
+                        for i in range(array_size):
+                            item_key = f"{field_key}_item_{i}"
+                            if item_key in st.session_state:
+                                value = st.session_state[item_key]
+                                collected_array.append(value)
+                                logger.info(f"[DEBUG] Collected item {i}: {value}")
+                            else:
+                                logger.warning(f"[DEBUG] Item key not found: {item_key}")
+                        
+                        # DEBUG: Log before and after
+                        logger.info(f"[DEBUG] Original form_data[{field_name}]: {form_data.get(field_name)}")
+                        logger.info(f"[DEBUG] Collected array: {collected_array}")
+                        
+                        # Update form_data with collected array
+                        form_data[field_name] = collected_array
+                        
+                        # Also sync to session state for consistency
+                        FormGenerator._sync_array_to_session(field_name, collected_array)
+                        
+                        logger.info(f"[DEBUG] Updated form_data[{field_name}]: {form_data[field_name]}")
+                    else:
+                        logger.warning(f"[DEBUG] Size key not found in session_state: {size_key}")
+                        logger.info(f"[DEBUG] Available keys: {[k for k in st.session_state.keys() if 'scalar_array' in str(k) or field_name in str(k)]}")
+                
+                # For object arrays, data_editor handles its own state
+                # No additional collection needed
+        
+        return form_data
+    
+    @staticmethod
     def render_dynamic_form(schema: Dict[str, Any], current_data: Dict[str, Any]) -> Dict[str, Any]:
         """
         Render a dynamic form based on schema and return form data.
@@ -56,6 +152,10 @@ class FormGenerator:
             
             # Handle validation button
             if validate_submitted:
+                # CRITICAL: Collect array data from individual item widgets AFTER form submission
+                # Inside forms, widget values are only available in session_state after submission
+                form_data = FormGenerator._collect_array_data_from_widgets(schema, form_data)
+                
                 # Always save the form data first
                 SessionManager.set_form_data(form_data)
                 
@@ -71,11 +171,17 @@ class FormGenerator:
                     SessionManager.clear_validation_errors()
                     st.success("Data validated successfully")
                 
+                # Force rerun to update diff section with latest changes
+                st.rerun()
+                
                 # Always return the form_data to preserve changes
                 return form_data
             
             # Handle submit button
             if submit_submitted:
+                # CRITICAL: Collect array data from individual item widgets AFTER form submission
+                form_data = FormGenerator._collect_array_data_from_widgets(schema, form_data)
+                
                 # Save form data
                 SessionManager.set_form_data(form_data)
                 
@@ -151,21 +257,61 @@ class FormGenerator:
 
     @staticmethod
     def collect_current_form_data(schema: Dict[str, Any]) -> Dict[str, Any]:
-        """Collect current form values from session state without rendering the UI."""
+        """
+        Collect current form values from session state without rendering the UI.
+        
+        This method extracts all current widget values from session state, including
+        proper handling of array fields (both scalar and object arrays) and edge cases
+        like empty arrays and missing keys.
+        
+        Args:
+            schema: Schema definition containing field configurations
+            
+        Returns:
+            Dictionary of current form data with all field values
+        """
         form_data = {}
         fields = schema.get('fields', {})
+        
         for field_name, field_config in fields.items():
             field_type = field_config.get('type', 'string')
             field_key = f"field_{field_name}"
             
-            # Get regular field value
-            if field_key in st.session_state:
-                value = st.session_state[field_key]
-                if value is not None:
-                    form_data[field_name] = value
-            
-            # Override for array fields if applicable
+            # Handle array fields with proper extraction logic
             if field_type == 'array':
+                items_config = field_config.get('items', {})
+                item_type = items_config.get('type', 'string')
+                
+                # For object arrays, check data_editor key first
+                if item_type == 'object':
+                    data_editor_key = f"data_editor_{field_name}"
+                    if data_editor_key in st.session_state:
+                        value = st.session_state[data_editor_key]
+                        # Handle pandas DataFrame from data_editor
+                        if hasattr(value, 'to_dict'):
+                            # Convert DataFrame to list of dicts
+                            form_data[field_name] = value.to_dict('records')
+                        elif isinstance(value, list):
+                            form_data[field_name] = value
+                        else:
+                            # Fallback to empty array if value is unexpected type
+                            form_data[field_name] = []
+                        continue
+                
+                # For scalar arrays, use field_{field_name} key
+                if field_key in st.session_state:
+                    value = st.session_state[field_key]
+                    # Handle empty arrays and None values
+                    if value is None:
+                        form_data[field_name] = []
+                    elif isinstance(value, list):
+                        form_data[field_name] = value
+                    else:
+                        # Single value - wrap in array
+                        form_data[field_name] = [value]
+                    continue
+                
+                # Fallback: check legacy array keys for backward compatibility
                 array_key = f"array_{field_name}"
                 json_array_key = f"json_array_{field_name}"
                 
@@ -180,8 +326,12 @@ class FormGenerator:
                             form_data[field_name] = value
                     except json.JSONDecodeError as e:
                         logger.warning(f"Invalid JSON for array {field_name}: {e}")
+                        form_data[field_name] = []
+                else:
+                    # No array value found - use empty array
+                    form_data[field_name] = []
             
-            # Override for object fields if applicable
+            # Handle object fields
             elif field_type == 'object':
                 object_key = f"json_object_{field_name}"
                 if object_key in st.session_state and st.session_state[object_key] is not None:
@@ -193,7 +343,27 @@ class FormGenerator:
                             form_data[field_name] = value
                     except json.JSONDecodeError as e:
                         logger.warning(f"Invalid JSON for object {field_name}: {e}")
+                        form_data[field_name] = {}
+                elif field_key in st.session_state:
+                    value = st.session_state[field_key]
+                    form_data[field_name] = value if value is not None else {}
+                else:
+                    form_data[field_name] = {}
+            
+            # Handle regular scalar fields
+            else:
+                if field_key in st.session_state:
+                    value = st.session_state[field_key]
+                    if value is not None:
+                        # Convert date/datetime objects to strings for JSON serialization
+                        if field_type == 'date' and isinstance(value, date):
+                            form_data[field_name] = value.strftime("%Y-%m-%d")
+                        elif field_type == 'datetime' and isinstance(value, datetime):
+                            form_data[field_name] = value.isoformat()
+                        else:
+                            form_data[field_name] = value
         
+        logger.debug(f"[collect_current_form_data] Collected {len(form_data)} fields from session state")
         return form_data
 
     @staticmethod
@@ -266,6 +436,28 @@ class FormGenerator:
                     hydrated_value = None
             else:
                 hydrated_value = None
+            
+            # Parse date/datetime values if they're strings
+            if field_type == 'date' and hydrated_value is not None:
+                if isinstance(hydrated_value, str):
+                    try:
+                        from dateutil import parser
+                        hydrated_value = parser.parse(hydrated_value).date()
+                    except Exception as e:
+                        logger.warning(f"Failed to parse date string '{hydrated_value}': {e}")
+                        hydrated_value = None
+                elif isinstance(hydrated_value, datetime):
+                    hydrated_value = hydrated_value.date()
+            elif field_type == 'datetime' and hydrated_value is not None:
+                if isinstance(hydrated_value, str):
+                    try:
+                        from dateutil import parser
+                        hydrated_value = parser.parse(hydrated_value)
+                    except Exception as e:
+                        logger.warning(f"Failed to parse datetime string '{hydrated_value}': {e}")
+                        hydrated_value = None
+                elif isinstance(hydrated_value, date) and not isinstance(hydrated_value, datetime):
+                    hydrated_value = datetime.combine(hydrated_value, datetime.min.time())
                 
             # Handle session state
             if widget_key in st.session_state:
@@ -288,6 +480,10 @@ class FormGenerator:
                     widget_type = 'text_area'
                 else:
                     widget_type = 'text_input'
+            elif field_type == 'date':
+                widget_type = 'date_input'
+            elif field_type == 'datetime':
+                widget_type = 'datetime_input'
             elif field_type == 'enum':
                 widget_type = 'selectbox'
             elif field_type == 'number':
@@ -330,7 +526,11 @@ class FormGenerator:
                 return st.text_input(**widget_kwargs)
         
         except Exception as e:
-            st.error(f"Error rendering field {field_name}")
+            st.error(f"Error rendering field {field_name}: {str(e)}")
+            logger.error(f"Error rendering field {field_name}: {e}", exc_info=True)
+            # Show detailed error in expander for debugging
+            with st.expander("Error Details"):
+                st.code(str(e))
             return current_value
     
     @staticmethod
@@ -432,25 +632,53 @@ class FormGenerator:
         return st.checkbox(**kwargs)
     
     @staticmethod
-    def _render_date_input(field_name: str, field_config: Dict[str, Any], kwargs: Dict[str, Any]) -> Optional[date]:
-        """Render date input field."""
-        # Remove value from kwargs since it's handled by session state
-        kwargs.pop('value', None)
+    def _render_date_input(field_name: str, field_config: Dict[str, Any], kwargs: Dict[str, Any]) -> Optional[str]:
+        """Render date input field and return as string."""
+        # Handle string to date conversion
+        value = kwargs.get('value')
+        if value is not None:
+            if isinstance(value, str):
+                try:
+                    from dateutil import parser
+                    value = parser.parse(value).date()
+                except Exception as e:
+                    logger.warning(f"Failed to parse date string '{value}': {e}")
+                    value = None
+            elif isinstance(value, datetime):
+                value = value.date()
+            elif not isinstance(value, date):
+                logger.warning(f"Unexpected date value type: {type(value)}")
+                value = None
+        
+        # Update kwargs with parsed value
+        if value is not None:
+            kwargs['value'] = value
+        else:
+            kwargs.pop('value', None)
+        
         result = st.date_input(**kwargs)
-        return result if result is not None else None
+        # Convert date object to string for JSON serialization and comparison
+        if result is not None and isinstance(result, date):
+            return result.strftime("%Y-%m-%d")
+        return None
     
     @staticmethod
-    def _render_datetime_input(field_name: str, field_config: Dict[str, Any], kwargs: Dict[str, Any]) -> datetime:
-        """Render datetime input field."""
+    def _render_datetime_input(field_name: str, field_config: Dict[str, Any], kwargs: Dict[str, Any]) -> str:
+        """Render datetime input field and return as ISO format string."""
         # Streamlit doesn't have native datetime input, use date + time
         col1, col2 = st.columns(2)
         
         current_dt = kwargs.get('value')
         if isinstance(current_dt, str):
             try:
-                current_dt = datetime.fromisoformat(current_dt)
-            except:
+                from dateutil import parser
+                current_dt = parser.parse(current_dt)
+            except Exception as e:
+                logger.warning(f"Failed to parse datetime string '{current_dt}': {e}")
                 current_dt = datetime.now()
+        elif isinstance(current_dt, date) and not isinstance(current_dt, datetime):
+            # Convert date to datetime
+            current_dt = datetime.combine(current_dt, datetime.min.time())
         elif not isinstance(current_dt, datetime):
             current_dt = datetime.now()
         
@@ -458,17 +686,21 @@ class FormGenerator:
             date_part = st.date_input(
                 f"{kwargs.get('label', field_name)} (Date)",
                 value=current_dt.date(),
-                key=f"{kwargs['key']}_date"
+                key=f"{kwargs['key']}_date",
+                disabled=kwargs.get('disabled', False)
             )
         
         with col2:
             time_part = st.time_input(
                 f"{kwargs.get('label', field_name)} (Time)",
                 value=current_dt.time(),
-                key=f"{kwargs['key']}_time"
+                key=f"{kwargs['key']}_time",
+                disabled=kwargs.get('disabled', False)
             )
         
-        return datetime.combine(date_part, time_part)
+        # Convert datetime to ISO format string for JSON serialization and comparison
+        combined_dt = datetime.combine(date_part, time_part)
+        return combined_dt.isoformat()
     
     @staticmethod
     def _render_array_editor(field_name: str, field_config: Dict[str, Any], current_value: Any) -> List[Any]:
@@ -526,55 +758,57 @@ class FormGenerator:
         
         # Container for the array editor
         with st.container():
-            # Instructions for scalar array editing (ASCII text only)
-            st.info("How to edit: Modify values in the input fields. Use 'Add Item' to add new items. Click 'Remove' next to any item to remove it.")
+            st.markdown(f"**{field_config.get('label', field_name)}** ({item_type} array)")
+            st.caption("Edit values below. To add items, increase the count. To remove items, clear the value and decrease the count.")
             
-            # Add item section at the top
-            col1, col2 = st.columns([3, 1])
+            # Number input to control array size (form-compatible)
+            array_size_key = f"{field_key}_size"
+            current_size = len(working_array)
             
-            with col1:
-                st.markdown(f"**{field_config.get('label', field_name)}** ({item_type} array)")
+            desired_size = st.number_input(
+                f"Number of items",
+                min_value=0,
+                max_value=100,
+                value=current_size,
+                step=1,
+                key=array_size_key,
+                help="Adjust the number of items in the array"
+            )
             
-            with col2:
-                # Add item button with field-specific key
-                add_button_key = f"{field_key}_add_btn"
-                if st.button("Add Item", key=add_button_key):
-                    st.session_state[add_key] = True
-                    st.rerun()  # Force immediate rerun
+            # Adjust array size based on user input
+            size_changed = False
+            if desired_size > current_size:
+                # Add new items
+                for _ in range(desired_size - current_size):
+                    default_value = FormGenerator._get_default_value_for_type(item_type, items_config)
+                    working_array.append(default_value)
+                size_changed = True
+            elif desired_size < current_size:
+                # Remove items from the end
+                working_array = working_array[:desired_size]
+                size_changed = True
             
-            # Handle add item request
-            if st.session_state.get(add_key, False):
-                default_value = FormGenerator._get_default_value_for_type(item_type, items_config)
-                working_array.append(default_value)
-                st.session_state[add_key] = False  # Reset add state
-            
-            # Handle item removal first (check for removal requests)
-            if removal_key in st.session_state and st.session_state[removal_key] is not None:
-                item_to_remove = st.session_state[removal_key]
-                if 0 <= item_to_remove < len(working_array):
-                    working_array.pop(item_to_remove)
-                st.session_state[removal_key] = None  # Reset removal state
+            # Synchronize array to session after size changes
+            if size_changed:
+                FormGenerator._sync_array_to_session(field_name, working_array)
             
             # Render existing items
-            for i, item_value in enumerate(working_array):
-                col1, col2 = st.columns([4, 1])
-                
-                with col1:
-                    # Render input based on item type with field-specific key
-                    new_value = FormGenerator._render_scalar_input(
-                        f"{field_name}[{i}]",
-                        item_type,
-                        item_value,
-                        items_config,
-                        key=f"{field_key}_item_{i}"
-                    )
+            for i in range(len(working_array)):
+                # Render input based on item type with field-specific key
+                new_value = FormGenerator._render_scalar_input(
+                    f"{field_name}[{i}]",
+                    item_type,
+                    working_array[i],
+                    items_config,
+                    key=f"{field_key}_item_{i}"
+                )
+                # Check if individual item value changed
+                if new_value != working_array[i]:
                     working_array[i] = new_value
-                
-                with col2:
-                    # Remove button - store removal request in session state with field-specific key
-                    if st.button("Remove", key=f"{field_key}_remove_{i}", help="Remove this item"):
-                        st.session_state[removal_key] = i
-                        st.rerun()  # Force immediate rerun to process removal
+                    # Synchronize after individual item value change
+                    FormGenerator._sync_array_to_session(field_name, working_array)
+                else:
+                    working_array[i] = new_value
             
             # Validation feedback
             validation_errors = FormGenerator._validate_scalar_array(field_name, working_array, items_config)
@@ -585,9 +819,8 @@ class FormGenerator:
                 if working_array:  # Only show success if array is not empty
                     st.success(f"{len(working_array)} items valid")
         
-        # Write the updated array back to session state so _render_field can pick it up
-        field_key = f"field_{field_name}"
-        st.session_state[field_key] = working_array
+        # Ensure final synchronization to session state and SessionManager
+        FormGenerator._sync_array_to_session(field_name, working_array)
         
         return working_array
     
@@ -628,6 +861,8 @@ class FormGenerator:
                 if st.button("Add Row", key=f"add_row_{field_name}"):
                     new_object = FormGenerator._create_default_object(properties)
                     working_array.append(new_object)
+                    # Synchronize after adding row
+                    FormGenerator._sync_array_to_session(field_name, working_array)
                     st.rerun()  # Force immediate rerun to show new row
             
             # Display the data editor if we have data
@@ -651,6 +886,9 @@ class FormGenerator:
                 # Clean up any NaN values that pandas might introduce
                 working_array = FormGenerator._clean_object_array(working_array)
                 
+                # Synchronize after data_editor changes (cell edits)
+                FormGenerator._sync_array_to_session(field_name, working_array)
+                
                 # Add manual row deletion interface
                 if len(working_array) > 0:
                     st.markdown("#### Manual Row Operations")
@@ -668,6 +906,8 @@ class FormGenerator:
                         if st.button("Delete Selected Row", key=f"delete_row_{field_name}"):
                             if 0 <= row_to_delete < len(working_array):
                                 working_array.pop(row_to_delete)
+                                # Synchronize after deleting row
+                                FormGenerator._sync_array_to_session(field_name, working_array)
                                 st.success(f"Deleted row {row_to_delete}")
                                 st.rerun()
             else:
@@ -682,9 +922,8 @@ class FormGenerator:
                 if working_array:  # Only show success if array is not empty
                     st.success(f"{len(working_array)} objects valid")
         
-        # Write the updated array back to session state so _render_field can pick it up
-        field_key = f"field_{field_name}"
-        st.session_state[field_key] = working_array
+        # Ensure final synchronization to session state and SessionManager
+        FormGenerator._sync_array_to_session(field_name, working_array)
         
         return working_array
     
@@ -882,12 +1121,16 @@ class FormGenerator:
         elif item_type == "date":
             try:
                 if isinstance(current_value, str):
-                    current_date = datetime.strptime(current_value, "%Y-%m-%d").date()
+                    from dateutil import parser
+                    current_date = parser.parse(current_value).date()
+                elif isinstance(current_value, datetime):
+                    current_date = current_value.date()
                 elif isinstance(current_value, date):
                     current_date = current_value
                 else:
                     current_date = datetime.now().date()
-            except (ValueError, TypeError):
+            except (ValueError, TypeError) as e:
+                logger.warning(f"Failed to parse date value '{current_value}': {e}")
                 current_date = datetime.now().date()
             
             value = st.date_input(
@@ -896,7 +1139,12 @@ class FormGenerator:
                 key=key,
                 help=f"Date value for {field_name}"
             )
-            return value.strftime("%Y-%m-%d")
+            # Ensure value is a date object before calling strftime
+            if isinstance(value, date):
+                return value.strftime("%Y-%m-%d")
+            else:
+                logger.warning(f"date_input returned non-date value: {type(value)}")
+                return str(value) if value is not None else ""
         
         elif item_type == "enum":
             choices = items_config.get("choices", [])
