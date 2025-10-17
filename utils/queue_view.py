@@ -542,7 +542,9 @@ class QueueView:
             return 'Receipt'
         elif 'contract' in filename_lower:
             return 'Contract'
-        elif 'purchase' in filename_lower or 'po' in filename_lower:
+        elif any(term in filename_lower for term in [
+            'purchase_order', 'po_number', 'purchaseorder', 'purchase-order'
+        ]) or ('po_' in filename_lower and any(char.isdigit() for char in filename.split('_')[1] if '_' in filename and len(filename.split('_')) > 1)):
             return 'Purchase Order'
         else:
             return 'Document'

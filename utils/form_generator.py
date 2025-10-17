@@ -774,13 +774,12 @@ class FormGenerator:
         # Container for the array editor
         with st.container():
             st.markdown(f"**{field_config.get('label', field_name)}** ({item_type} array)")
-            st.caption("Edit values below. Use the array action controls to add, remove, or duplicate items, then apply the change.")
+            st.caption("Edit values below. Use the array action controls to add or remove items, then apply the change.")
             
             action_choices = [
                 ("none", "-- Select action --"),
                 ("add", "Add new item"),
-                ("remove", "Remove selected item"),
-                ("duplicate", "Duplicate selected item")
+                ("remove", "Remove selected item")
             ]
             action_lookup = {value: label for value, label in action_choices}
             action_values = [value for value, _ in action_choices]
@@ -797,7 +796,7 @@ class FormGenerator:
             )
             
             target_index = None
-            requires_index = selected_action in {"remove", "duplicate"}
+            requires_index = selected_action in {"remove"}
             if requires_index and working_array:
                 target_index = st.selectbox(
                     "Target item",
@@ -832,18 +831,6 @@ class FormGenerator:
                         action_performed = True
                     else:
                         st.warning("Select an item to remove.")
-                elif selected_action == "duplicate":
-                    if working_array and target_index is not None:
-                        try:
-                            duplicated_value = copy.deepcopy(working_array[target_index])
-                        except Exception:
-                            duplicated_value = working_array[target_index]
-                        insert_at = target_index + 1
-                        working_array.insert(insert_at, duplicated_value)
-                        st.success(f"Duplicated item {target_index} to index {insert_at}")
-                        action_performed = True
-                    else:
-                        st.warning("Select an item to duplicate.")
                 else:
                     st.info("Select an action before applying.")
                 
