@@ -22,7 +22,9 @@ from array_sandbox_app import (
     clean_object_array,
     validate_object_array,
     validate_object_item,
-    render_object_array_editor
+    render_object_array_editor,
+    SandboxSessionManager,
+    _FAKE_STREAMLIT_SESSION,
 )
 
 
@@ -31,6 +33,7 @@ class TestObjectArrayEditor(unittest.TestCase):
     
     def setUp(self):
         """Set up test fixtures"""
+        SandboxSessionManager.reset()
         self.line_item_properties = {
             "item_code": {
                 "type": "string",
@@ -214,7 +217,7 @@ class TestObjectArrayEditor(unittest.TestCase):
         # Check default values by type
         self.assertEqual(default_obj["item_code"], "")  # string
         self.assertEqual(default_obj["description"], "")  # string
-        self.assertEqual(default_obj["quantity"], 0)  # integer
+        self.assertEqual(default_obj["quantity"], 1)  # integer defaults to min_value when provided
         self.assertEqual(default_obj["unit_price"], 0.0)  # number
         self.assertEqual(default_obj["total_price"], 0.0)  # number
         self.assertEqual(default_obj["is_taxable"], False)  # boolean
@@ -467,11 +470,12 @@ class TestObjectArrayEditor(unittest.TestCase):
         # data_editor should be called
         mock_data_editor.assert_called_once()
 
+    @patch('streamlit.rerun')
     @patch('streamlit.data_editor')
     @patch('streamlit.button')
     @patch('streamlit.columns')
     @patch('streamlit.container')
-    def test_render_object_array_editor_add_row(self, mock_container, mock_columns, mock_button, mock_data_editor):
+    def test_render_object_array_editor_add_row(self, mock_container, mock_columns, mock_button, mock_data_editor, mock_rerun):
         """Test adding row to object array editor"""
         # Mock Streamlit components with proper context manager support
         mock_container.return_value.__enter__ = Mock(return_value=None)
@@ -487,6 +491,7 @@ class TestObjectArrayEditor(unittest.TestCase):
         mock_columns.return_value = [mock_col1, mock_col2]
         
         mock_button.return_value = True  # Simulate button click
+        mock_rerun.side_effect = RuntimeError("rerun invoked")
         
         # Mock data_editor
         extended_data = self.sample_line_items + [create_default_object(self.line_item_properties)]
@@ -499,10 +504,13 @@ class TestObjectArrayEditor(unittest.TestCase):
             }
         }
         
-        result = render_object_array_editor("line_items", field_config, self.sample_line_items)
-        
-        # Should return array with new item added
-        self.assertEqual(len(result), 3)
+        with self.assertRaises(RuntimeError):
+            render_object_array_editor("line_items", field_config, self.sample_line_items)
+    
+        form_data = _FAKE_STREAMLIT_SESSION.get(SandboxSessionManager.FORM_DATA_KEY, {})
+        self.assertIn("line_items", form_data)
+        self.assertEqual(len(form_data["line_items"]), 3)
+        mock_rerun.assert_called_once()
 
 
 class TestObjectArrayEditorIntegration(unittest.TestCase):

@@ -18,7 +18,9 @@ from array_sandbox_app import (
     get_default_value_for_type,
     validate_scalar_array,
     validate_scalar_item,
-    render_scalar_input
+    render_scalar_input,
+    SandboxSessionManager,
+    _get_session_state,
 )
 
 
@@ -27,6 +29,7 @@ class TestScalarArrayEditor(unittest.TestCase):
     
     def setUp(self):
         """Set up test fixtures"""
+        SandboxSessionManager.reset()
         self.string_config = {
             "type": "string",
             "min_length": 3,
@@ -77,6 +80,18 @@ class TestScalarArrayEditor(unittest.TestCase):
         
         # Unknown type default
         self.assertEqual(get_default_value_for_type("unknown", {}), "")
+
+    def test_sync_array_field_updates_session_state(self):
+        """Sandbox session manager should mirror production key patterns."""
+        SandboxSessionManager.reset()
+        SandboxSessionManager.sync_array_field("serial_numbers", ["SN001", "SN002"])
+
+        state = _get_session_state()
+        self.assertEqual(state["field_serial_numbers"], ["SN001", "SN002"])
+        self.assertEqual(state["scalar_array_serial_numbers_size"], 2)
+
+        form_data = SandboxSessionManager.get_form_data()
+        self.assertEqual(form_data["serial_numbers"], ["SN001", "SN002"])
 
     def test_validate_scalar_item_string_valid(self):
         """Test string validation with valid values"""
@@ -240,7 +255,7 @@ class TestScalarArrayEditor(unittest.TestCase):
         # Multiple errors
         invalid_array = ["AB", "xyz", ""]  # All invalid
         errors = validate_scalar_array("serial_numbers", invalid_array, self.string_config)
-        self.assertEqual(len(errors), 3)
+        self.assertEqual(len(errors), 4)
 
     def test_validate_scalar_array_empty(self):
         """Test validation of empty arrays"""
@@ -310,6 +325,17 @@ class TestScalarArrayEditor(unittest.TestCase):
         mock_date_input.assert_called_once()
         self.assertEqual(result, "2024-01-15")
 
+    @patch('streamlit.selectbox')
+    def test_render_scalar_input_enum(self, mock_selectbox):
+        """Test rendering enum input widget"""
+        mock_selectbox.return_value = "OptionB"
+
+        enum_config = {"type": "enum", "choices": ["OptionA", "OptionB", "OptionC"]}
+        result = render_scalar_input("test_field[0]", "enum", "OptionA", enum_config, "enum_key")
+
+        mock_selectbox.assert_called_once()
+        self.assertEqual(result, "OptionB")
+
     def test_constraint_combinations(self):
         """Test various constraint combinations"""
         # String with only min_length
@@ -339,6 +365,9 @@ class TestScalarArrayEditor(unittest.TestCase):
 
 class TestScalarArrayEditorIntegration(unittest.TestCase):
     """Integration tests for scalar array editor components"""
+
+    def setUp(self):
+        SandboxSessionManager.reset()
     
     def test_full_validation_workflow(self):
         """Test complete validation workflow with realistic data"""
@@ -358,7 +387,7 @@ class TestScalarArrayEditorIntegration(unittest.TestCase):
         # Invalid serial numbers
         invalid_serials = ["SN001", "sn002", ""]  # lowercase and empty
         errors = validate_scalar_array("serial_numbers", invalid_serials, serial_config)
-        self.assertEqual(len(errors), 2)
+        self.assertEqual(len(errors), 3)
         
         # Check error messages contain array indices
         error_text = " ".join(errors)

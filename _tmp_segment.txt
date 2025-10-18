@@ -1,0 +1,175 @@
+def render_object_array_config() -> Dict[str, Any]:
+    """Render configuration interface for object array fields"""
+    st.markdown("#### Object Properties")
+    
+    # Initialize properties in session state with unique key
+    props_key = "temp_object_properties_schema_editor"
+    if props_key not in st.session_state:
+        st.session_state[props_key] = {}
+    
+    # Initialize property counter for unique keys
+    if "obj_prop_counter" not in st.session_state:
+        st.session_state.obj_prop_counter = 0
+    
+    # Add new property interface (outside form for dynamic updates)
+    with st.expander("➕ Add New Property", expanded=True):
+        col1, col2 = st.columns(2)
+        
+        counter = st.session_state.obj_prop_counter
+        
+        with col1:
+            prop_name = st.text_input("Property Name", placeholder="e.g., item_code", key=f"obj_prop_name_{counter}")
+            prop_label = st.text_input("Property Label", placeholder="e.g., Item Code", key=f"obj_prop_label_{counter}")
+            prop_required = st.checkbox("Required Property", key=f"obj_prop_required_{counter}")
+        
+        with col2:
+            prop_type = st.selectbox(
+                "Property Type",
+                ["string", "number", "integer", "boolean", "date", "enum"],
+                key=f"obj_prop_type_select_{counter}"
+            )
+            prop_help = st.text_input("Help Text", placeholder="Description of this property", key=f"obj_prop_help_{counter}")
+        
+        # Property-specific constraints (dynamic based on type)
+        prop_config = {"type": prop_type, "label": prop_label or prop_name, "required": prop_required}
+        if prop_help:
+            prop_config["help"] = prop_help
+        
+        # Dynamic constraints based on property type
+        if prop_type == "string":
+            st.markdown("**String Constraints**")
+            col1, col2 = st.columns(2)
+            with col1:
+                min_len = st.number_input("Min Length", min_value=0, value=0, step=1, key=f"obj_prop_min_len_{counter}")
+                if min_len > 0:
+                    prop_config["min_length"] = min_len
+            
+            with col2:
+                max_len = st.number_input("Max Length", min_value=1, value=100, step=1, key=f"obj_prop_max_len_{counter}")
+                prop_config["max_length"] = max_len
+            
+            pattern = st.text_input("Pattern (regex)", key=f"obj_prop_pattern_{counter}", placeholder="e.g., ^[A-Z0-9]+$")
+            if pattern:
+                prop_config["pattern"] = pattern
+        
+        elif prop_type == "number":
+            st.markdown("**Number Constraints**")
+            col1, col2 = st.columns(2)
+            with col1:
+                min_val = st.number_input("Min Value", value=0.0, key="obj_prop_min_val", format="%.2f")
+                prop_config["min_value"] = round(min_val, 2)  # Round to 2 decimal places
+            
+            with col2:
+                max_val = st.number_input("Max Value", value=1000.0, key="obj_prop_max_val", format="%.2f")
+                prop_config["max_value"] = round(max_val, 2)  # Round to 2 decimal places
+            
+            # Validation: Check if min > max
+            if min_val > max_val:
+                st.error(f"⚠️ Min Value ({min_val:.2f}) cannot be greater than Max Value ({max_val:.2f})")
+            
+            step_val = st.number_input("Step", min_value=0.01, value=0.01, step=0.01, key="obj_prop_step", format="%.2f")
+            prop_config["step"] = round(step_val, 2)  # Round to 2 decimal places
+        
+        elif prop_type == "integer":
+            st.markdown("**Integer Constraints**")
+            col1, col2 = st.columns(2)
+            with col1:
+                min_val = st.number_input("Min Value", value=0, step=1, key="obj_prop_min_val_int")
+                prop_config["min_value"] = int(min_val)
+            
+            with col2:
+                max_val = st.number_input("Max Value", value=1000, step=1, key="obj_prop_max_val_int")
+                prop_config["max_value"] = int(max_val)
+            
+            # Validation: Check if min > max
+            if int(min_val) > int(max_val):
+                st.error(f"⚠️ Min Value ({int(min_val)}) cannot be greater than Max Value ({int(max_val)})")
+            
+            step_val = st.number_input("Step", min_value=1, value=1, step=1, key="obj_prop_step_int")
+            prop_config["step"] = int(step_val)
+        
+        elif prop_type == "boolean":
+            st.markdown("**Boolean Options**")
+            default_val = st.checkbox("Default Value", key="obj_prop_bool_default")
+            prop_config["default"] = default_val
+        
+        elif prop_type == "enum":
+            st.markdown("**Enum Options**")
+            choices_text = st.text_area(
+                "Choices (one per line)",
+                placeholder="option1\noption2\noption3",
+                key="obj_prop_enum_choices"
+            )
+            if choices_text:
+                choices = [choice.strip() for choice in choices_text.split('\n') if choice.strip()]
+                prop_config["choices"] = choices
+        
+        # Add property button (outside form)
+        if st.button("Add Property", key=f"add_obj_property_btn_{counter}") and prop_name:
+            if prop_name in st.session_state[props_key]:
+                st.warning(f"Property '{prop_name}' already exists. Use a different name.")
+            else:
+                st.session_state[props_key][prop_name] = prop_config
+                
+                # Increment counter to get fresh input fields for next property
+                st.session_state.obj_prop_counter += 1
+                
+                st.success(f"Added property: {prop_name}")
+                st.rerun()
+    
+    # Display current properties
+    if st.session_state[props_key]:
+        st.markdown("#### Current Properties")
+        
+        for prop_name, prop_config in st.session_state[props_key].items():
+            with st.container():
+                col1, col2 = st.columns([4, 1])
+                
+                with col1:
+                    st.markdown(f"**{prop_config.get('label', prop_name)}** ({prop_config['type']})")
+                    if prop_config.get('required'):
+                        st.markdown("🔴 *Required*")
+                    else:
+                        st.markdown("⚪ *Optional*")
+                    if prop_config.get('help'):
+                        st.markdown(f"*{prop_config['help']}*")
+                    
+                    # Show constraints
+                    constraints = []
+                    if 'min_length' in prop_config:
+                        constraints.append(f"min_length: {prop_config['min_length']}")
+                    if 'max_length' in prop_config:
+                        constraints.append(f"max_length: {prop_config['max_length']}")
+                    if 'min_value' in prop_config:
+                        constraints.append(f"min_value: {prop_config['min_value']}")
+                    if 'max_value' in prop_config:
+                        constraints.append(f"max_value: {prop_config['max_value']}")
+                    if 'pattern' in prop_config:
+                        constraints.append(f"pattern: {prop_config['pattern']}")
+                    if 'choices' in prop_config:
+                        constraints.append(f"choices: {prop_config['choices']}")
+                    
+                    if constraints:
+                        st.markdown(f"*Constraints: {', '.join(constraints)}*")
+                
+                with col2:
+                    if st.button("🗑️", key=f"remove_obj_prop_{prop_name}", help="Remove property"):
+                        del st.session_state[props_key][prop_name]
+                        st.rerun()
+                
+                st.markdown("---")
+    else:
+        st.info("No properties added yet. Add properties using the form above.")
+    
+    # Clear all properties button
+    if st.session_state[props_key]:
+        if st.button("🗑️ Clear All Properties", key="clear_all_obj_props"):
+            st.session_state[props_key] = {}
+            st.rerun()
+    
+    # Return object configuration
+    return {
+        "type": "object",
+        "properties": st.session_state[props_key].copy()
+    }
+

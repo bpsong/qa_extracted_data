@@ -87,6 +87,8 @@ audits/
 corrected/
 locks/
 sample_json/
+*.json
+*.csv
 json_docs/
 pdf_docs/
 config-templates/

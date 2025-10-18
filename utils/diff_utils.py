@@ -910,8 +910,26 @@ def _clean_path(path: Any) -> str:
     # Handle the ugly format directly first
     path_str = str(path)
     if "root['" in path_str and "t1:" in path_str:
-        # Extract field name from ugly format like "<root['Supplier name'] t1:..., t2:...>"
+        # Extract full path from ugly format like "<root['line_items'][0]['description'] t1:..., t2:...>"
         import re
+        # Extract everything between root and the first space (before t1:)
+        path_match = re.search(r"root(\[.*?\])(?:\s|>)", path_str)
+        if path_match:
+            # Parse the extracted path to get proper formatting
+            extracted_path = "root" + path_match.group(1)
+            tokens = _parse_deepdiff_path_tokens(extracted_path)
+            if tokens:
+                display_parts: List[str] = []
+                for token in tokens:
+                    if isinstance(token, int):
+                        if display_parts:
+                            display_parts[-1] += f"[{token}]"
+                        else:
+                            display_parts.append(f"[{token}]")
+                    else:
+                        display_parts.append(str(token))
+                return " → ".join(display_parts) if display_parts else "root"
+        # Fallback to simple field extraction if complex parsing fails
         field_match = re.search(r"root\['([^']+)'\]", path_str)
         if field_match:
             return field_match.group(1)

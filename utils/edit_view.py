@@ -511,7 +511,7 @@ class EditView:
                 
                 # Update all widget keys with the original data using schema
                 fields_schema = schema.get('fields', {})
-                update_widget_keys(original_data, fields_schema)
+                update_widget_keys(original_data, schema)
                 
                 # Array-specific reset logic: identify and reset array fields
                 for field_name, field_config in fields_schema.items():

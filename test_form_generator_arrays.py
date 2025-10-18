@@ -50,6 +50,7 @@ if "streamlit" not in sys.modules:
         success=MagicMock(),
         error=MagicMock(),
         rerun=MagicMock(),
+        write=MagicMock(),
         data_editor=MagicMock(),
         date_input=MagicMock(return_value=datetime.now().date()),
         time_input=MagicMock(return_value=datetime.now().time()),

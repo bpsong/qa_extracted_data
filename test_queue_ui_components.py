@@ -238,9 +238,10 @@ class TestCollapsibleDateFilter:
             result = EnhancedQueueUI.render_collapsible_date_filter()
             
             # Verify custom range is returned
+            # Note: The implementation converts date to datetime for filtering
             assert result['preset'] == 'custom'
-            assert result['start_date'] == start_date
-            assert result['end_date'] == end_date
+            assert result['start_date'] == datetime.combine(start_date, datetime.min.time())
+            assert result['end_date'] == datetime.combine(end_date, datetime.max.time())
             
             # Verify UI elements were created
             mock_write.assert_called_once_with("**Custom Date Range:**")
