@@ -553,23 +553,25 @@ def render_scalar_array_page(test_schemas: Dict, test_data: Dict):
 
     st.subheader("Array Field Editors")
 
-    with st.form(f"scalar_array_form_{schema_choice}", clear_on_submit=False):
-        updated_values: Dict[str, List[Any]] = {}
-        for field_name, field_config in array_fields.items():
-            st.markdown(f"### {field_config.get('label', field_name)}")
-            st.caption(field_config.get('help', 'No description provided.'))
-            current_array = current_data.get(field_name, [])
-            updated_values[field_name] = render_scalar_array_editor(field_name, field_config, current_array)
+    updated_values: Dict[str, List[Any]] = {}
+    changes_made = False
+    for field_name, field_config in array_fields.items():
+        st.markdown(f"### {field_config.get('label', field_name)}")
+        st.caption(field_config.get('help', 'No description provided.'))
+        current_array = current_data.get(field_name, [])
+        new_value = render_scalar_array_editor(field_name, field_config, current_array)
+        if new_value != current_array:
+            changes_made = True
+        updated_values[field_name] = new_value
 
-        commit = st.form_submit_button("Sync scalar array changes", type="primary")
-
-    if commit:
+    if changes_made:
         for field_name, value in updated_values.items():
             current_data[field_name] = value
-        st.session_state[f"array_data_{schema_choice}"] = current_data
+        st.session_state[f"array_data_{schema_choice}"] = copy.deepcopy(current_data)
         SandboxSessionManager.set_form_data(copy.deepcopy(current_data))
-        st.success("Scalar array values synchronized with sandbox state.")
         st.rerun()
+    else:
+        SandboxSessionManager.set_form_data(copy.deepcopy(current_data))
 
     st.subheader("Updated Data")
     st.json(current_data)
@@ -644,6 +646,11 @@ def render_validation_page(test_schemas: Dict[str, Dict[str, Any]], test_data: D
     st.caption(
         "Load representative sandbox data to spot-check downstream validators that use this schema."
     )
+
+    # Add null check before calling .replace() on selected_filename
+    if selected_filename is None:
+        st.warning("No schema file selected. Please select a schema file to proceed.")
+        return
 
     schema_key = selected_filename.replace(".yaml", "")
     sample_data = test_data.get(schema_key, {})
@@ -728,126 +735,254 @@ def render_object_array_page(test_schemas: Dict, test_data: Dict):
 
 def render_scalar_array_editor(field_name: str, field_config: Dict[str, Any], current_value: List[Any]) -> List[Any]:
     """
-    Production-aligned editor for arrays of scalar values.
+    Table-based editor for scalar arrays powered by Streamlit's data_editor.
 
-    This implementation mirrors the production form generator so sandbox experiments share
-    the same state management semantics and validation flow.
+    Users can edit values directly in the grid, add new rows with the built-in controls,
+    and delete rows without leaving the table. Values are normalised before being returned.
     """
+    import pandas as pd
+
     items_config = field_config.get("items", {})
     item_type = items_config.get("type", "string")
 
-    # Always work on a shallow copy to avoid mutating caller state in-place
-    working_array = list(current_value or [])
+    display_values = [
+        prepare_scalar_value_for_editor(item_type, value, items_config)
+        for value in (current_value or [])
+    ]
 
-    field_key = f"scalar_array_{field_name}"
-    action_key = f"{field_key}_action"
-    target_index_key = f"{field_key}_target_index"
-    size_key = f"{field_key}_size"
+    column_config = {
+        "value": build_scalar_column_config(field_name, field_config, item_type, items_config)
+    }
 
-    state = _get_session_state()
-    if size_key not in state:
-        state[size_key] = len(working_array)
+    data_source = pd.DataFrame({"value": display_values})
+    
+    if data_source.empty:
+        data_source = pd.DataFrame({"value": pd.Series(dtype="object")})
 
-    # Sync initial data so downstream validators and collectors see the same values
-    SandboxSessionManager.sync_array_field(field_name, working_array)
+    st.caption(
+        "Edit values directly in the table below. Use the '+' icon to add rows and the row menu to delete entries."
+    )
 
-    with st.container():
-        st.markdown(f"**{field_config.get('label', field_name)}** ({item_type} array)")
-        st.caption(
-            "Edit values below. Use the array action controls to add or remove items, "
-            "then apply the change to update the working list."
+    edited_df = st.data_editor(
+        data_source,
+        column_config=column_config,
+        num_rows="dynamic",
+        use_container_width=True,
+        hide_index=True,
+        key=f"scalar_data_editor_{field_name}",
+    )
+
+    raw_values = edited_df["value"].tolist() if "value" in edited_df else []
+
+    updated_values: List[Any] = []
+    for raw_value in raw_values:
+        try:
+            if pd.isna(raw_value):
+                continue
+        except Exception:
+            pass
+        updated_values.append(coerce_scalar_value(item_type, raw_value, items_config))
+
+    SandboxSessionManager.sync_array_field(field_name, updated_values)
+
+    validation_errors = validate_scalar_array(field_name, updated_values, items_config)
+    if validation_errors:
+        for error in validation_errors:
+            st.error(error)
+            logger.debug("[ScalarArrayEditor] %s validation error: %s", field_name, error)
+    elif updated_values:
+        st.success(f"{len(updated_values)} items valid")
+    else:
+        st.info("No items in this array yet.")
+
+    return updated_values
+
+
+def build_scalar_column_config(
+    field_name: str,
+    field_config: Dict[str, Any],
+    item_type: str,
+    items_config: Dict[str, Any],
+) -> Any:
+    """Create a column configuration for scalar array editing based on item type."""
+    label = field_config.get("label", field_name)
+    help_text = field_config.get("help", "")
+    required = field_config.get("required", False)
+
+    range_hint: List[str] = []
+    min_value = items_config.get("min_value")
+    max_value = items_config.get("max_value")
+    if min_value is not None:
+        range_hint.append(f">= {min_value}")
+    if max_value is not None:
+        range_hint.append(f"<= {max_value}")
+
+    if range_hint:
+        separator = " " if help_text else ""
+        help_text = f"{help_text}{separator}(Allowed: {', '.join(range_hint)})"
+
+    if item_type == "string":
+        return st.column_config.TextColumn(
+            label=label,
+            help=help_text,
+            required=required,
+            max_chars=items_config.get("max_length"),
         )
-
-        action_choices = [
-            ("none", "-- Select action --"),
-            ("add", "Add new item"),
-            ("remove", "Remove selected item"),
-        ]
-        action_lookup = {value: label for value, label in action_choices}
-        action_values = [value for value, _ in action_choices]
-
-        def format_action_choice(choice: str) -> str:
-            return action_lookup.get(choice, str(choice))
-
-        selected_action = st.selectbox(
-            "Array action",
-            options=action_values,
-            format_func=format_action_choice,
-            key=action_key,
-            help="Choose an action to apply to this array",
+    if item_type == "number":
+        return st.column_config.NumberColumn(
+            label=label,
+            help=help_text,
+            required=required,
+            step=items_config.get("step", 0.01),
+            format="%.2f",
         )
-
-        target_index = None
-        requires_index = selected_action in {"remove"}
-        if requires_index and working_array:
-            target_index = st.selectbox(
-                "Target item",
-                options=list(range(len(working_array))),
-                format_func=lambda idx: f"Index {idx}: {working_array[idx]!r}",
-                key=target_index_key,
-                help="Select which item the action should target",
-            )
-        elif requires_index:
-            if target_index_key in state:
-                del state[target_index_key]
-            st.info("No items available for the selected action.")
-        elif target_index_key in state:
-            del state[target_index_key]
-
-        apply_action = st.form_submit_button(
-            f"Apply to {field_config.get('label', field_name)}",
-            key=f"{field_key}_apply_action",
-            help="Submit the selected array action",
+    if item_type == "integer":
+        return st.column_config.NumberColumn(
+            label=label,
+            help=help_text,
+            required=required,
+            step=1,
+            format="%d",
         )
+    if item_type == "boolean":
+        return st.column_config.CheckboxColumn(
+            label=label,
+            help=help_text,
+            required=required,
+        )
+    if item_type == "date":
+        return st.column_config.DateColumn(
+            label=label,
+            help=help_text,
+            required=required,
+        )
+    if item_type == "enum":
+        return st.column_config.SelectboxColumn(
+            label=label,
+            help=help_text,
+            required=required,
+            options=items_config.get("choices", []),
+            default=items_config.get("default"),
+        )
+    return st.column_config.TextColumn(
+        label=label,
+        help=help_text,
+        required=required,
+    )
 
-        if apply_action:
-            action_performed = False
 
-            if selected_action == "add":
-                default_value = get_default_value_for_type(item_type, items_config)
-                working_array.append(default_value)
-                state[size_key] = len(working_array)
-                st.success(f"Added new item at index {len(working_array) - 1}")
-                action_performed = True
-            elif selected_action == "remove":
-                if working_array and target_index is not None:
-                    removed_value = working_array.pop(target_index)
-                    state[size_key] = len(working_array)
-                    st.success(f"Removed item {target_index}: {removed_value!r}")
-                    action_performed = True
-                else:
-                    st.warning("Select an item to remove before applying.")
-            else:
-                st.info("Select an action before applying.")
+def prepare_scalar_value_for_editor(item_type: str, value: Any, items_config: Dict[str, Any]) -> Any:
+    """Convert stored values into editor-friendly representations."""
+    if value is None:
+        return None
 
-            if action_performed:
-                SandboxSessionManager.sync_array_field(field_name, working_array)
-                st.rerun()
+    if item_type == "string":
+        return str(value)
+    if item_type == "number":
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            logger.debug("Scalar editor: unable to coerce %r to float for display", value)
+            return None
+    if item_type == "integer":
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            logger.debug("Scalar editor: unable to coerce %r to int for display", value)
+            return None
+    if item_type == "boolean":
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, str):
+            lowered = value.strip().lower()
+            if lowered in {"true", "yes", "1"}:
+                return True
+            if lowered in {"false", "no", "0"}:
+                return False
+        return bool(value)
+    if item_type == "date":
+        if isinstance(value, datetime):
+            return value.date()
+        if isinstance(value, date):
+            return value
+        if isinstance(value, str):
+            try:
+                return datetime.strptime(value, "%Y-%m-%d").date()
+            except ValueError:
+                logger.debug("Scalar editor: unable to parse date string %r", value)
+                return None
+        return None
+    if item_type == "enum":
+        choices = items_config.get("choices", [])
+        return value if not choices or value in choices else items_config.get("default")
+    return value
 
-        for index in range(len(working_array)):
-            new_value = render_scalar_input(
-                f"{field_name}[{index}]",
-                item_type,
-                working_array[index],
-                items_config,
-                key=f"{field_key}_item_{index}",
-            )
-            if new_value != working_array[index]:
-                working_array[index] = new_value
-                SandboxSessionManager.sync_array_field(field_name, working_array)
-            else:
-                working_array[index] = new_value
 
-        validation_errors = validate_scalar_array(field_name, working_array, items_config)
-        if validation_errors:
-            for error in validation_errors:
-                st.error(error)
-                logger.debug("[ScalarArrayEditor] %s validation error: %s", field_name, error)
-        elif working_array:
-            st.success(f"{len(working_array)} items valid")
+def coerce_scalar_value(item_type: str, raw_value: Any, items_config: Dict[str, Any]) -> Any:
+    """Normalise editor outputs back into schema-compatible scalar values."""
+    if raw_value is None:
+        return None
 
-    SandboxSessionManager.sync_array_field(field_name, working_array)
-    return working_array
+    if item_type == "string":
+        return str(raw_value)
+    if item_type == "number":
+        if isinstance(raw_value, (int, float)) and not isinstance(raw_value, bool):
+            return float(raw_value)
+        if isinstance(raw_value, str):
+            stripped = raw_value.strip()
+            if not stripped:
+                return ""
+            try:
+                return float(stripped)
+            except ValueError:
+                return raw_value
+        return raw_value
+    if item_type == "integer":
+        if isinstance(raw_value, bool):
+            return int(raw_value)
+        if isinstance(raw_value, (int, float)):
+            return int(raw_value)
+        if isinstance(raw_value, str):
+            stripped = raw_value.strip()
+            if not stripped:
+                return ""
+            try:
+                return int(stripped)
+            except ValueError:
+                return raw_value
+        return raw_value
+    if item_type == "boolean":
+        if isinstance(raw_value, bool):
+            return raw_value
+        if isinstance(raw_value, str):
+            lowered = raw_value.strip().lower()
+            if lowered in {"true", "yes", "1"}:
+                return True
+            if lowered in {"false", "no", "0"}:
+                return False
+        return bool(raw_value)
+    if item_type == "date":
+        if isinstance(raw_value, datetime):
+            return raw_value.strftime("%Y-%m-%d")
+        if isinstance(raw_value, date):
+            return raw_value.strftime("%Y-%m-%d")
+        if isinstance(raw_value, str):
+            stripped = raw_value.strip()
+            if not stripped:
+                return ""
+            try:
+                parsed = datetime.strptime(stripped, "%Y-%m-%d")
+                return parsed.strftime("%Y-%m-%d")
+            except ValueError:
+                return raw_value
+        return str(raw_value)
+    if item_type == "enum":
+        choices = items_config.get("choices", [])
+        if choices and raw_value not in choices:
+            default_choice = items_config.get("default")
+            return default_choice if default_choice in choices else choices[0]
+        return raw_value
+    return raw_value
 
 
 def get_default_value_for_type(item_type: str, items_config: Dict[str, Any]) -> Any:
@@ -873,131 +1008,6 @@ def get_default_value_for_type(item_type: str, items_config: Dict[str, Any]) -> 
         return items_config.get("default", choices[0] if choices else "")
     else:
         return ""
-
-
-def render_scalar_input(field_name: str, item_type: str, current_value: Any, items_config: Dict[str, Any], key: str) -> Any:
-    """Render appropriate input widget for scalar array item with enum support."""
-
-    if item_type == "string":
-        value = st.text_input(
-            f"Item {key.split('_')[-1]}",
-            value=str(current_value) if current_value is not None else "",
-            key=key,
-            help=f"String value for {field_name}"
-        )
-        return value
-
-    elif item_type == "number":
-        min_val = items_config.get("min_value", None)
-        max_val = items_config.get("max_value", None)
-        step = items_config.get("step", 0.01)
-
-        # Ensure all numeric types are consistent (float)
-        min_val = float(min_val) if min_val is not None else None
-        max_val = float(max_val) if max_val is not None else None
-        step = float(step)
-
-        value = st.number_input(
-            f"Item {key.split('_')[-1]}",
-            value=float(current_value) if current_value is not None else 0.0,
-            min_value=min_val,
-            max_value=max_val,
-            step=step,
-            format="%.2f",
-            key=key,
-            help=f"Number value for {field_name}"
-        )
-        return round(value, 2)
-
-    elif item_type == "integer":
-        min_val = items_config.get("min_value", None)
-        max_val = items_config.get("max_value", None)
-        step = items_config.get("step", 1)
-
-        # Ensure all numeric types are consistent (int)
-        min_val = int(min_val) if min_val is not None else None
-        max_val = int(max_val) if max_val is not None else None
-        step = int(step)
-
-        value = st.number_input(
-            f"Item {key.split('_')[-1]}",
-            value=int(current_value) if current_value is not None else 0,
-            min_value=min_val,
-            max_value=max_val,
-            step=step,
-            format="%d",
-            key=key,
-            help=f"Integer value for {field_name}"
-        )
-        return int(value)
-
-    elif item_type == "boolean":
-        value = st.checkbox(
-            f"Item {key.split('_')[-1]}",
-            value=bool(current_value) if current_value is not None else False,
-            key=key,
-            help=f"Boolean value for {field_name}"
-        )
-        return value
-
-    elif item_type == "date":
-        try:
-            if isinstance(current_value, str):
-                from dateutil import parser
-                current_date = parser.parse(current_value).date()
-            elif isinstance(current_value, datetime):
-                current_date = current_value.date()
-            elif isinstance(current_value, date):
-                current_date = current_value
-            else:
-                current_date = datetime.now().date()
-        except (ValueError, TypeError) as e:
-            logger.warning(f"Failed to parse date value '{current_value}': {e}")
-            current_date = datetime.now().date()
-
-        value = st.date_input(
-            f"Item {key.split('_')[-1]}",
-            value=current_date,
-            key=key,
-            help=f"Date value for {field_name}"
-        )
-        if isinstance(value, date):
-            return value.strftime("%Y-%m-%d")
-        logger.warning("date_input returned non-date value: %s", type(value))
-        return str(value) if value is not None else ""
-
-    elif item_type == "enum":
-        choices = items_config.get("choices", [])
-        if not choices:
-            return st.text_input(
-                f"Item {key.split('_')[-1]}",
-                value=str(current_value) if current_value is not None else "",
-                key=key,
-                help=f"Enum value for {field_name}"
-            )
-
-        try:
-            current_index = choices.index(current_value) if current_value in choices else 0
-        except (ValueError, TypeError):
-            current_index = 0
-
-        value = st.selectbox(
-            f"Item {key.split('_')[-1]}",
-            choices,
-            index=current_index,
-            key=key,
-            help=f"Select value for {field_name}"
-        )
-        return value
-
-    else:
-        value = st.text_input(
-            f"Item {key.split('_')[-1]}",
-            value=str(current_value) if current_value is not None else "",
-            key=key,
-            help=f"Value for {field_name}"
-        )
-        return value
 
 
 def validate_scalar_array(field_name: str, array_value: List[Any], items_config: Dict[str, Any]) -> List[str]:
@@ -1185,6 +1195,17 @@ def generate_column_config(properties: Dict[str, Dict[str, Any]]) -> Dict[str, A
         label = prop_config.get("label", prop_name)
         help_text = prop_config.get("help", "")
         required = prop_config.get("required", False)
+        min_value = prop_config.get("min_value")
+        max_value = prop_config.get("max_value")
+
+        range_hint: List[str] = []
+        if min_value is not None:
+            range_hint.append(f">= {min_value}")
+        if max_value is not None:
+            range_hint.append(f"<= {max_value}")
+        if range_hint:
+            separator = " " if help_text else ""
+            help_text = f"{help_text}{separator}(Allowed: {', '.join(range_hint)})"
         
         if prop_type == "string":
             column_config[prop_name] = st.column_config.TextColumn(
@@ -1198,8 +1219,6 @@ def generate_column_config(properties: Dict[str, Dict[str, Any]]) -> Dict[str, A
                 label=label,
                 help=help_text,
                 required=required,
-                min_value=prop_config.get("min_value", None),
-                max_value=prop_config.get("max_value", None),
                 step=prop_config.get("step", 0.01),
                 format="%.2f"
             )
@@ -1208,8 +1227,6 @@ def generate_column_config(properties: Dict[str, Dict[str, Any]]) -> Dict[str, A
                 label=label,
                 help=help_text,
                 required=required,
-                min_value=prop_config.get("min_value", None),
-                max_value=prop_config.get("max_value", None),
                 step=prop_config.get("step", 1),
                 format="%d"
             )
@@ -1340,7 +1357,7 @@ def render_scalar_array_config() -> Dict[str, Any]:
     
     if item_type == "string":
         st.markdown("#### String Constraints")
-        # st.write("🐛 DEBUG: Showing STRING constraint widgets")
+        
         col1, col2 = st.columns(2)
         with col1:
             min_length = st.number_input("Min Length", min_value=0, value=0, step=1, key="string_min_len")
@@ -1357,7 +1374,7 @@ def render_scalar_array_config() -> Dict[str, Any]:
     
     elif item_type == "number":
         st.markdown("#### Number Constraints")
-        # st.write("🐛 DEBUG: Showing NUMBER constraint widgets")
+        
         col1, col2 = st.columns(2)
         with col1:
             min_value = st.number_input("Min Value", value=0.0, key="number_min", format="%.2f")
@@ -1376,7 +1393,7 @@ def render_scalar_array_config() -> Dict[str, Any]:
     
     elif item_type == "integer":
         st.markdown("#### Integer Constraints")
-        # st.write("🐛 DEBUG: Showing INTEGER constraint widgets")
+        
         col1, col2 = st.columns(2)
         with col1:
             min_value = st.number_input("Min Value", value=0, step=1, key="integer_min")
@@ -1395,18 +1412,18 @@ def render_scalar_array_config() -> Dict[str, Any]:
     
     elif item_type == "boolean":
         st.markdown("#### Boolean Options")
-        # st.write("🐛 DEBUG: Showing BOOLEAN constraint widgets")
+        
         default_value = st.checkbox("Default Value", key="boolean_default")
         config["default"] = default_value
     
     elif item_type == "date":
         st.markdown("#### Date Options")
-        # st.write("🐛 DEBUG: Showing DATE constraint widgets")
+        
         st.info("Date arrays use YYYY-MM-DD format")
     
     elif item_type == "enum":
         st.markdown("#### Enum Options")
-        # st.write("🐛 DEBUG: Showing ENUM constraint widgets")
+        
         choices_text = st.text_area(
             "Choices (one per line)",
             placeholder="option1\noption2\noption3",
