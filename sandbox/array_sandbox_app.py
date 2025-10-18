@@ -11,10 +11,22 @@ and object arrays with comprehensive validation and user feedback collection.
 import streamlit as st
 import yaml
 import json
+import sys
+from pathlib import Path
 from typing import Dict, List, Any, Optional, MutableMapping, cast
 from datetime import datetime, date
 import copy
 import logging
+
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+from utils.schema_editor_view import (  # noqa: E402
+    SchemaEditor,
+    list_schema_files as production_list_schema_files,
+    validate_schema_structure as production_validate_schema_structure,
+)
 
 # Logger aligned with production utilities for consistent diagnostics
 logger = logging.getLogger(__name__)
@@ -570,15 +582,75 @@ def render_scalar_array_page(test_schemas: Dict, test_data: Dict):
 
 
 def render_schema_editor_page() -> None:
-    """Placeholder schema editor page while sandbox parity work is underway."""
-    st.header("Schema Editor (Sandbox)")
-    st.info("Schema editor experiments are not yet available in this sandbox build.")
+    """Render the production Schema Editor experience inside the sandbox."""
+
+    st.header("Schema Editor (Sandbox Parity Mode)")
+    st.caption(
+        "This view embeds the production Schema Editor controller so every workflow "
+        "(file management, editor, validation) behaves identically before promoting changes."
+    )
+
+    # Flag the session so downstream components can adapt messaging if needed.
+    st.session_state.setdefault("schema_editor_environment", "sandbox")
+
+    # Delegate to the production controller. All state management, error handling,
+    # and UI rendering is owned by SchemaEditor.render(), which guarantees parity
+    # with the live application.
+    SchemaEditor.render()
 
 
 def render_validation_page(test_schemas: Dict[str, Dict[str, Any]], test_data: Dict[str, Dict[str, Any]]) -> None:
-    """Placeholder validation testing page."""
-    st.header("Validation Testing (Sandbox)")
-    st.info("Validation harness will return once the sandbox is aligned with production.")
+    """Expose the production schema validation helpers for parity testing."""
+
+    st.header("Validation Testing (Sandbox Parity Mode)")
+    st.caption(
+        "Run the same schema validation engine that powers production to verify sandbox "
+        "changes before rollout."
+    )
+
+    schema_files = production_list_schema_files()
+    if not schema_files:
+        st.info("No schema files available. Create or import a schema from the Schema Editor first.")
+        return
+
+    file_lookup = {info["filename"]: info for info in schema_files}
+    selected_filename = st.selectbox(
+        "Schema file",
+        options=list(file_lookup.keys()),
+        format_func=lambda name: f"{name} ({'valid' if file_lookup[name]['is_valid'] else 'invalid'})",
+    )
+
+    selected_info = file_lookup[selected_filename]
+    with open(selected_info["path"], "r", encoding="utf-8") as handle:
+        raw_contents = handle.read()
+
+    st.subheader("Schema Preview")
+    st.code(raw_contents, language="yaml")
+
+    schema_dict = yaml.safe_load(raw_contents) if raw_contents.strip() else {}
+
+    st.subheader("Validation Results")
+    is_valid, validation_errors = production_validate_schema_structure(schema_dict)
+
+    if is_valid:
+        st.success("✅ Schema passed structural validation.")
+    else:
+        st.error("❌ Schema failed validation. Review the issues below.")
+        for idx, message in enumerate(validation_errors, start=1):
+            st.write(f"{idx}. {message}")
+
+    st.markdown("---")
+    st.subheader("Quick Test Data")
+    st.caption(
+        "Load representative sandbox data to spot-check downstream validators that use this schema."
+    )
+
+    schema_key = selected_filename.replace(".yaml", "")
+    sample_data = test_data.get(schema_key, {})
+    if sample_data:
+        st.json(sample_data)
+    else:
+        st.info("No sandbox fixture data found for this schema filename.")
 
 
 def render_object_array_page(test_schemas: Dict, test_data: Dict):
