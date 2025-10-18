@@ -35,15 +35,16 @@ class FormGenerator:
         """
         # Update session state with the field key
         field_key = f"field_{field_name}"
-        st.session_state[field_key] = array_value
-        st.session_state[f"scalar_array_{field_name}_size"] = len(array_value)
+        array_copy = copy.deepcopy(array_value)
+        st.session_state[field_key] = array_copy
+        st.session_state[f"scalar_array_{field_name}_size"] = len(array_copy)
         
         # Update form data in SessionManager
         current_form_data = SessionManager.get_form_data()
-        current_form_data[field_name] = array_value
+        current_form_data[field_name] = array_copy
         SessionManager.set_form_data(current_form_data)
         
-        logger.debug(f"[_sync_array_to_session] Synchronized {field_name}: {len(array_value)} items")
+        logger.debug(f"[_sync_array_to_session] Synchronized {field_name}: {len(array_copy)} items")
     
     @staticmethod
     def _collect_array_data_from_widgets(schema: Dict[str, Any], form_data: Dict[str, Any]) -> Dict[str, Any]:
@@ -73,6 +74,7 @@ class FormGenerator:
                 # For scalar arrays, collect from individual item widgets
                 if item_type != 'object':
                     field_key = f"scalar_array_{field_name}"
+                    field_storage_key = f"field_{field_name}"
                     size_key = f"{field_key}_size"
                     
                     # DEBUG: Log what we're looking for
@@ -85,17 +87,33 @@ class FormGenerator:
                         array_size = st.session_state[size_key]
                         logger.info(f"[DEBUG] Array size: {array_size}")
                         
-                        collected_array = []
+                        collected_array: List[Any] = []
+                        item_keys_found = False
                         
                         # Collect values from individual item widgets
                         for i in range(array_size):
                             item_key = f"{field_key}_item_{i}"
                             if item_key in st.session_state:
+                                item_keys_found = True
                                 value = st.session_state[item_key]
                                 collected_array.append(value)
                                 logger.info(f"[DEBUG] Collected item {i}: {value}")
                             else:
                                 logger.warning(f"[DEBUG] Item key not found: {item_key}")
+
+                        if not item_keys_found or len(collected_array) != array_size:
+                            stored_value = st.session_state.get(field_storage_key)
+                            if isinstance(stored_value, list):
+                                collected_array = copy.deepcopy(stored_value)
+                                logger.info(f"[DEBUG] Fallback collected array from field state: {collected_array}")
+                            else:
+                                stored_value = st.session_state.get(field_key)
+                                if isinstance(stored_value, list):
+                                    collected_array = copy.deepcopy(stored_value)
+                                    logger.info(f"[DEBUG] Fallback collected array from legacy scalar key: {collected_array}")
+                                else:
+                                    collected_array = []
+                                    logger.warning(f"[DEBUG] Unable to find scalar array items or field state for {field_name}")
                         
                         # DEBUG: Log before and after
                         logger.info(f"[DEBUG] Original form_data[{field_name}]: {form_data.get(field_name)}")
@@ -746,129 +764,250 @@ class FormGenerator:
     @staticmethod
     def _render_scalar_array_editor(field_name: str, field_config: Dict[str, Any], current_value: List[Any]) -> List[Any]:
         """
-        Enhanced user-friendly editor for arrays of scalar values with proper key namespacing.
-        
-        Args:
-            field_name: Name of the field
-            field_config: Field configuration from schema
-            current_value: Current array value
-            
-        Returns:
-            Updated array value
+        Streamlined scalar array editor using Streamlit's data_editor for in-table editing.
         """
+        import pandas as pd
+
         items_config = field_config.get("items", {})
         item_type = items_config.get("type", "string")
-        
-        # Initialize array if empty
-        if not current_value:
-            current_value = []
-        
-        # Create a copy to work with
-        working_array = current_value.copy()
-        
-        # Use field-specific keys to prevent state leakage between forms
-        field_key = f"scalar_array_{field_name}"
-        action_key = f"{field_key}_action"
-        target_index_key = f"{field_key}_target_index"
-        
-        # Container for the array editor
-        with st.container():
-            st.markdown(f"**{field_config.get('label', field_name)}** ({item_type} array)")
-            st.caption("Edit values below. Use the array action controls to add or remove items, then apply the change.")
-            
-            action_choices = [
-                ("none", "-- Select action --"),
-                ("add", "Add new item"),
-                ("remove", "Remove selected item")
-            ]
-            action_lookup = {value: label for value, label in action_choices}
-            action_values = [value for value, _ in action_choices]
 
-            def format_action_choice(choice: str) -> str:
-                return action_lookup.get(choice, str(choice))
+        current_list = list(current_value or [])
 
-            selected_action = st.selectbox(
-                "Array action",
-                options=action_values,
-                format_func=format_action_choice,
-                key=action_key,
-                help="Choose an action to apply to this array"
+        display_values = [
+            FormGenerator._prepare_scalar_value_for_editor(item_type, value, items_config)
+            for value in current_list
+        ]
+
+        column_config = {
+            "value": FormGenerator._build_scalar_column_config(field_name, field_config, item_type, items_config)
+        }
+
+        data_source = pd.DataFrame({"value": display_values})
+        if data_source.empty:
+            data_source = pd.DataFrame({"value": pd.Series(dtype="object")})
+
+        st.caption(
+            "Edit values directly in the table. Use the '+' icon to add rows and the row menu to delete entries."
+        )
+
+        edited_df = st.data_editor(
+            data_source,
+            column_config=column_config,
+            num_rows="dynamic",
+            use_container_width=True,
+            hide_index=True,
+            key=f"scalar_data_editor_{field_name}",
+        )
+
+        raw_values = edited_df["value"].tolist() if "value" in edited_df else []
+
+        updated_values: List[Any] = []
+        for raw_value in raw_values:
+            try:
+                if pd.isna(raw_value):
+                    continue
+            except Exception:
+                pass
+            updated_values.append(FormGenerator._coerce_scalar_value(item_type, raw_value, items_config))
+
+        FormGenerator._sync_array_to_session(field_name, updated_values)
+
+        validation_errors = FormGenerator._validate_scalar_array(field_name, updated_values, items_config)
+        if validation_errors:
+            for error in validation_errors:
+                st.error(error)
+        elif updated_values:
+            st.success(f"{len(updated_values)} items valid")
+        else:
+            st.info("No items in this array yet.")
+
+        return updated_values
+
+    @staticmethod
+    def _build_scalar_column_config(
+        field_name: str,
+        field_config: Dict[str, Any],
+        item_type: str,
+        items_config: Dict[str, Any],
+    ) -> Any:
+        """Create column configuration for scalar array editing based on schema metadata."""
+        label = field_config.get("label", field_name)
+        help_text = field_config.get("help", "")
+        required = field_config.get("required", False)
+
+        range_hint: List[str] = []
+        min_value = items_config.get("min_value")
+        max_value = items_config.get("max_value")
+        if min_value is not None:
+            range_hint.append(f">= {min_value}")
+        if max_value is not None:
+            range_hint.append(f"<= {max_value}")
+        if range_hint:
+            separator = " " if help_text else ""
+            help_text = f"{help_text}{separator}(Allowed: {', '.join(range_hint)})"
+
+        if item_type == "string":
+            return st.column_config.TextColumn(
+                label=label,
+                help=help_text,
+                required=required,
+                max_chars=items_config.get("max_length"),
             )
-            
-            target_index = None
-            requires_index = selected_action in {"remove"}
-            if requires_index and working_array:
-                target_index = st.selectbox(
-                    "Target item",
-                    options=list(range(len(working_array))),
-                    format_func=lambda idx: f"Index {idx}: {working_array[idx]!r}",
-                    key=target_index_key,
-                    help="Select which item the action should target"
-                )
-            elif requires_index:
-                if target_index_key in st.session_state:
-                    del st.session_state[target_index_key]
-                st.info("No items available for the selected action.")
-            elif target_index_key in st.session_state:
-                del st.session_state[target_index_key]
-            
-            apply_action = st.form_submit_button(
-                f"Apply to {field_config.get('label', field_name)}",
-                key=f"{field_key}_apply_action"
+        if item_type == "number":
+            return st.column_config.NumberColumn(
+                label=label,
+                help=help_text,
+                required=required,
+                step=items_config.get("step", 0.01),
+                format="%.2f",
             )
-            
-            if apply_action:
-                action_performed = False
-                if selected_action == "add":
-                    default_value = FormGenerator._get_default_value_for_type(item_type, items_config)
-                    working_array.append(default_value)
-                    st.success(f"Added new item at index {len(working_array) - 1}")
-                    action_performed = True
-                elif selected_action == "remove":
-                    if working_array and target_index is not None:
-                        removed_value = working_array.pop(target_index)
-                        st.success(f"Removed item {target_index}: {removed_value!r}")
-                        action_performed = True
-                    else:
-                        st.warning("Select an item to remove.")
-                else:
-                    st.info("Select an action before applying.")
-                
-                if action_performed:
-                    FormGenerator._sync_array_to_session(field_name, working_array)
-                    st.rerun()
-            
-            # Render existing items
-            for i in range(len(working_array)):
-                # Render input based on item type with field-specific key
-                new_value = FormGenerator._render_scalar_input(
-                    f"{field_name}[{i}]",
-                    item_type,
-                    working_array[i],
-                    items_config,
-                    key=f"{field_key}_item_{i}"
-                )
-                # Check if individual item value changed
-                if new_value != working_array[i]:
-                    working_array[i] = new_value
-                    # Synchronize after individual item value change
-                    FormGenerator._sync_array_to_session(field_name, working_array)
-                else:
-                    working_array[i] = new_value
-            
-            # Validation feedback
-            validation_errors = FormGenerator._validate_scalar_array(field_name, working_array, items_config)
-            if validation_errors:
-                for error in validation_errors:
-                    st.error(error)
-            else:
-                if working_array:  # Only show success if array is not empty
-                    st.success(f"{len(working_array)} items valid")
-        
-        # Ensure final synchronization to session state and SessionManager
-        FormGenerator._sync_array_to_session(field_name, working_array)
-        
-        return working_array
+        if item_type == "integer":
+            return st.column_config.NumberColumn(
+                label=label,
+                help=help_text,
+                required=required,
+                step=1,
+                format="%d",
+            )
+        if item_type == "boolean":
+            return st.column_config.CheckboxColumn(
+                label=label,
+                help=help_text,
+                required=required,
+            )
+        if item_type == "date":
+            return st.column_config.DateColumn(
+                label=label,
+                help=help_text,
+                required=required,
+            )
+        if item_type == "enum":
+            return st.column_config.SelectboxColumn(
+                label=label,
+                help=help_text,
+                required=required,
+                options=items_config.get("choices", []),
+                default=items_config.get("default"),
+            )
+        return st.column_config.TextColumn(
+            label=label,
+            help=help_text,
+            required=required,
+        )
+
+    @staticmethod
+    def _prepare_scalar_value_for_editor(item_type: str, value: Any, items_config: Dict[str, Any]) -> Any:
+        """Convert stored scalar array values into editor-friendly representations."""
+        if value is None:
+            return None
+
+        if item_type == "string":
+            return str(value)
+        if item_type == "number":
+            try:
+                return float(value)
+            except (TypeError, ValueError):
+                logger.debug("Scalar editor: unable to coerce %r to float for display", value)
+                return None
+        if item_type == "integer":
+            try:
+                return int(value)
+            except (TypeError, ValueError):
+                logger.debug("Scalar editor: unable to coerce %r to int for display", value)
+                return None
+        if item_type == "boolean":
+            if isinstance(value, bool):
+                return value
+            if isinstance(value, str):
+                lowered = value.strip().lower()
+                if lowered in {"true", "yes", "1"}:
+                    return True
+                if lowered in {"false", "no", "0"}:
+                    return False
+            return bool(value)
+        if item_type == "date":
+            if isinstance(value, datetime):
+                return value.date()
+            if isinstance(value, date):
+                return value
+            if isinstance(value, str):
+                try:
+                    return datetime.strptime(value, "%Y-%m-%d").date()
+                except ValueError:
+                    logger.debug("Scalar editor: unable to parse date string %r", value)
+                    return None
+            return None
+        if item_type == "enum":
+            choices = items_config.get("choices", [])
+            return value if not choices or value in choices else items_config.get("default")
+        return value
+
+    @staticmethod
+    def _coerce_scalar_value(item_type: str, raw_value: Any, items_config: Dict[str, Any]) -> Any:
+        """Normalize editor outputs back into schema-compatible scalar values."""
+        if raw_value is None:
+            return None
+
+        if item_type == "string":
+            return str(raw_value)
+        if item_type == "number":
+            if isinstance(raw_value, (int, float)) and not isinstance(raw_value, bool):
+                return float(raw_value)
+            if isinstance(raw_value, str):
+                stripped = raw_value.strip()
+                if not stripped:
+                    return ""
+                try:
+                    return float(stripped)
+                except ValueError:
+                    return raw_value
+            return raw_value
+        if item_type == "integer":
+            if isinstance(raw_value, bool):
+                return int(raw_value)
+            if isinstance(raw_value, (int, float)):
+                return int(raw_value)
+            if isinstance(raw_value, str):
+                stripped = raw_value.strip()
+                if not stripped:
+                    return ""
+                try:
+                    return int(stripped)
+                except ValueError:
+                    return raw_value
+            return raw_value
+        if item_type == "boolean":
+            if isinstance(raw_value, bool):
+                return raw_value
+            if isinstance(raw_value, str):
+                lowered = raw_value.strip().lower()
+                if lowered in {"true", "yes", "1"}:
+                    return True
+                if lowered in {"false", "no", "0"}:
+                    return False
+            return bool(raw_value)
+        if item_type == "date":
+            if isinstance(raw_value, datetime):
+                return raw_value.strftime("%Y-%m-%d")
+            if isinstance(raw_value, date):
+                return raw_value.strftime("%Y-%m-%d")
+            if isinstance(raw_value, str):
+                stripped = raw_value.strip()
+                if not stripped:
+                    return ""
+                try:
+                    parsed = datetime.strptime(stripped, "%Y-%m-%d")
+                    return parsed.strftime("%Y-%m-%d")
+                except ValueError:
+                    return raw_value
+            return str(raw_value)
+        if item_type == "enum":
+            choices = items_config.get("choices", [])
+            if choices and raw_value not in choices:
+                default_choice = items_config.get("default")
+                return default_choice if default_choice in choices else choices[0]
+            return raw_value
+        return raw_value
     
     @staticmethod
     def _render_object_array_editor(field_name: str, field_config: Dict[str, Any], current_value: List[Any]) -> List[Any]:

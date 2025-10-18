@@ -59,6 +59,7 @@ if "streamlit" not in sys.modules:
             NumberColumn=MagicMock(return_value=MagicMock()),
             CheckboxColumn=MagicMock(return_value=MagicMock()),
             DateColumn=MagicMock(return_value=MagicMock()),
+            SelectboxColumn=MagicMock(return_value=MagicMock()),
         ),
         cache_data=_pass_through_cache,
         cache_resource=types.SimpleNamespace(clear=MagicMock()),
@@ -139,6 +140,28 @@ def test_collect_array_data_from_widgets_uses_scalar_item_keys(session_state):
     assert updated["Tags"] == ["first", "second", "third"]
     assert updated["Other"] == "keep"
     sync_mock.assert_called_once_with("Tags", ["first", "second", "third"])
+
+
+def test_collect_array_data_from_widgets_falls_back_to_field_value(session_state):
+    schema = {
+        "fields": {
+            "Tags": {
+                "type": "array",
+                "items": {"type": "string"},
+            }
+        }
+    }
+    session_state["scalar_array_Tags_size"] = 2
+    session_state["field_Tags"] = ["alpha", "beta"]
+
+    original_form_data = {"Tags": ["stale"], "Other": 5}
+
+    with patch.object(FormGenerator, "_sync_array_to_session") as sync_mock:
+        updated = FormGenerator._collect_array_data_from_widgets(schema, copy.deepcopy(original_form_data))
+
+    assert updated["Tags"] == ["alpha", "beta"]
+    assert updated["Other"] == 5
+    sync_mock.assert_called_once_with("Tags", ["alpha", "beta"])
 
 
 def test_render_array_editor_delegates_to_scalar_editor(session_state):
