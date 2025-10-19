@@ -237,7 +237,14 @@ def test_clean_object_array_normalizes_nan_values():
         {"name": "Empty", "quantity": np.nan, "price": None},
     ]
 
-    cleaned = FormGenerator._clean_object_array(dirty)
+    properties = {
+        "name": {"type": "string"},
+        "quantity": {"type": "integer"},
+        "price": {"type": "number"},
+        "notes": {"type": "string"},
+    }
+
+    cleaned = FormGenerator._clean_object_array(dirty, properties)
 
     assert cleaned[0]["quantity"] == 5
     assert cleaned[0]["price"] == pytest.approx(9.5)

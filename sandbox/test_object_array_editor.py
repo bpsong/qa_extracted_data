@@ -190,6 +190,23 @@ class TestObjectArrayEditor(unittest.TestCase):
         self.assertIn("due_date", config)
         self.assertIsNotNone(config["due_date"])
 
+    def test_generate_column_config_enum(self):
+        """Test column configuration generation for enum properties"""
+        properties = {
+            "status": {
+                "type": "enum",
+                "label": "Status",
+                "help": "Item status",
+                "required": True,
+                "choices": ["pending", "approved"]
+            }
+        }
+
+        config = generate_column_config(properties)
+
+        self.assertIn("status", config)
+        self.assertIsNotNone(config["status"])
+
     def test_generate_column_config_unknown_type(self):
         """Test column configuration generation for unknown property types"""
         properties = {
@@ -241,7 +258,7 @@ class TestObjectArrayEditor(unittest.TestCase):
             }
         ]
         
-        cleaned_array = clean_object_array(dirty_array)
+        cleaned_array = clean_object_array(dirty_array, self.line_item_properties)
         
         # Check that NaN values are converted to None
         self.assertEqual(cleaned_array[0]["item_code"], "ITM001")
@@ -264,7 +281,7 @@ class TestObjectArrayEditor(unittest.TestCase):
             }
         ]
         
-        cleaned_array = clean_object_array(dirty_array)
+        cleaned_array = clean_object_array(dirty_array, self.line_item_properties)
         
         # Check that numpy types are converted to Python types
         self.assertEqual(cleaned_array[0]["quantity"], 5)
@@ -272,6 +289,42 @@ class TestObjectArrayEditor(unittest.TestCase):
         self.assertEqual(cleaned_array[0]["unit_price"], 150.5)
         self.assertIsInstance(cleaned_array[0]["unit_price"], float)
         self.assertEqual(cleaned_array[0]["item_code"], "ITM001")
+
+    def test_clean_object_array_preserves_decimal_numbers(self):
+        """Ensure number properties retain decimal semantics even when input is integer-like."""
+        dirty_array = [
+            {
+                "item_code": "ITM003",
+                "quantity": np.int64(2),
+                "unit_price": np.int64(800),
+                "total_price": 800,
+            }
+        ]
+        
+        cleaned_array = clean_object_array(dirty_array, self.line_item_properties)
+        
+        self.assertEqual(cleaned_array[0]["unit_price"], 800.0)
+        self.assertIsInstance(cleaned_array[0]["unit_price"], float)
+        self.assertEqual(cleaned_array[0]["total_price"], 800.0)
+
+    def test_incomplete_object_flags_required_fields(self):
+        """Incomplete rows should surface required-field validation errors."""
+        partial_array = [
+            {
+                "item_code": "ITM010"
+            }
+        ]
+
+        cleaned_array = clean_object_array(partial_array, self.line_item_properties)
+        # Missing schema properties should be present with None so validation can report them
+        self.assertIn("description", cleaned_array[0])
+        self.assertIsNone(cleaned_array[0]["description"])
+
+        errors = validate_object_item("line_items[0]", cleaned_array[0], self.line_item_properties)
+
+        self.assertTrue(any("description" in err for err in errors))
+        self.assertTrue(any("quantity" in err for err in errors))
+        self.assertTrue(any("unit_price" in err for err in errors))
 
     def test_validate_object_item_valid(self):
         """Test validation of valid object items"""

@@ -1054,6 +1054,9 @@ class FormGenerator:
             if working_array:
                 # Convert to DataFrame-like structure for st.data_editor
                 df = pd.DataFrame(working_array)
+                for column_name, prop_config in properties.items():
+                    if prop_config.get("type") == "date" and column_name in df.columns:
+                        df[column_name] = pd.to_datetime(df[column_name], errors="coerce")
                 
                 # Use st.data_editor for table editing with delete capability
                 edited_df = st.data_editor(
@@ -1069,7 +1072,7 @@ class FormGenerator:
                 working_array = edited_df.to_dict('records')
                 
                 # Clean up any NaN values that pandas might introduce
-                working_array = FormGenerator._clean_object_array(working_array)
+                working_array = FormGenerator._clean_object_array(working_array, properties)
                 
                 # Synchronize after data_editor changes (cell edits)
                 FormGenerator._sync_array_to_session(field_name, working_array)
@@ -1514,6 +1517,14 @@ class FormGenerator:
                     help=help_text,
                     required=required
                 )
+            elif prop_type == "enum":
+                column_config[prop_name] = st.column_config.SelectboxColumn(
+                    label=label,
+                    help=help_text,
+                    required=required,
+                    options=prop_config.get("choices", []),
+                    default=prop_config.get("default")
+                )
             else:
                 # Default to text column
                 column_config[prop_name] = st.column_config.TextColumn(
@@ -1536,24 +1547,53 @@ class FormGenerator:
         return default_object
     
     @staticmethod
-    def _clean_object_array(array: List[Dict]) -> List[Dict]:
-        """Clean object array by removing NaN values and converting numpy types"""
+    def _clean_object_array(
+        array: List[Dict],
+        properties: Optional[Dict[str, Dict[str, Any]]] = None
+    ) -> List[Dict]:
+        """Clean object array by removing NaN values and normalising types using schema hints."""
         import pandas as pd
         import numpy as np
         
         cleaned_array = []
+        properties = properties or {}
         for obj in array:
             cleaned_obj = {}
             for key, value in obj.items():
+                prop_config = properties.get(key, {})
+                prop_type = prop_config.get("type")
+                
                 # Handle pandas NaN values
                 if pd.isna(value):
                     cleaned_obj[key] = None
-                elif isinstance(value, np.integer):
-                    cleaned_obj[key] = int(value)
-                elif isinstance(value, np.floating):
-                    cleaned_obj[key] = float(value)
                 else:
-                    cleaned_obj[key] = value
+                    normalised_value = value
+
+                    if isinstance(value, np.bool_):
+                        normalised_value = bool(value)
+                    elif isinstance(value, np.integer):
+                        normalised_value = int(value)
+                    elif isinstance(value, np.floating):
+                        normalised_value = float(value)
+
+                    if prop_type == "number" and normalised_value is not None:
+                        try:
+                            normalised_value = float(normalised_value)
+                        except (TypeError, ValueError):
+                            pass
+                    elif prop_type == "integer" and normalised_value is not None:
+                        try:
+                            normalised_value = int(normalised_value)
+                        except (TypeError, ValueError):
+                            pass
+                    elif prop_type == "boolean" and normalised_value is not None:
+                        normalised_value = bool(normalised_value)
+
+                    cleaned_obj[key] = normalised_value
+
+            # Ensure all schema-defined properties are present so validation can report omissions
+            for prop_name in properties.keys():
+                cleaned_obj.setdefault(prop_name, None)
             cleaned_array.append(cleaned_obj)
         
         return cleaned_array

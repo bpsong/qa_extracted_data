@@ -343,6 +343,93 @@ def load_test_schemas() -> Dict[str, Dict[str, Any]]:
                 }
             }
         }
+        ,
+        "line_item_constraints_demo": {
+            "title": "Line Item Constraint Playground",
+            "description": "Schema focused on testing object property constraints within arrays",
+            "fields": {
+                "scenario_name": {
+                    "type": "string",
+                    "label": "Scenario Name",
+                    "required": True,
+                    "help": "Friendly name that appears in the sandbox header"
+                },
+                "line_items": {
+                    "type": "array",
+                    "label": "Constrained Line Items",
+                    "required": True,
+                    "help": "Table highlighting property-level constraints for quick experimentation",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "sku": {
+                                "type": "string",
+                                "label": "SKU",
+                                "required": True,
+                                "help": "Must match pattern SKU-0000",
+                                "pattern": r"^SKU-[0-9]{4}$",
+                                "min_length": 8,
+                                "max_length": 8
+                            },
+                            "description": {
+                                "type": "string",
+                                "label": "Description",
+                                "required": True,
+                                "help": "Between 5 and 60 characters",
+                                "min_length": 5,
+                                "max_length": 60
+                            },
+                            "quantity": {
+                                "type": "integer",
+                                "label": "Qty",
+                                "required": True,
+                                "help": "Whole numbers between 1 and 25",
+                                "min_value": 1,
+                                "max_value": 25
+                            },
+                            "unit_price": {
+                                "type": "number",
+                                "label": "Unit Price",
+                                "required": True,
+                                "help": "Price per unit (0.01 – 500.00)",
+                                "min_value": 0.01,
+                                "max_value": 500.00,
+                                "step": 0.01
+                            },
+                            "status": {
+                                "type": "enum",
+                                "label": "Status",
+                                "required": True,
+                                "help": "Lifecycle stage for the line item",
+                                "choices": ["pending", "approved", "backordered", "canceled"],
+                                "default": "pending"
+                            },
+                            "discount_rate": {
+                                "type": "number",
+                                "label": "Discount %",
+                                "required": False,
+                                "help": "Optional discount between 0% and 50%",
+                                "min_value": 0.0,
+                                "max_value": 0.5,
+                                "step": 0.01
+                            },
+                            "in_stock": {
+                                "type": "boolean",
+                                "label": "In Stock",
+                                "required": False,
+                                "help": "Toggle availability"
+                            },
+                            "delivery_date": {
+                                "type": "date",
+                                "label": "Delivery Date",
+                                "required": False,
+                                "help": "Expected delivery window"
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 
 def load_test_data() -> Dict[str, Dict[str, Any]]:
@@ -381,6 +468,31 @@ def load_test_data() -> Dict[str, Dict[str, Any]]:
                 }
             ],
             "total_amount": 1200.00
+        },
+        "line_item_constraints_demo": {
+            "scenario_name": "Constraint Demo",
+            "line_items": [
+                {
+                    "sku": "SKU-0001",
+                    "description": "Premium ergonomic office chair",
+                    "quantity": 3,
+                    "unit_price": 275.50,
+                    "status": "approved",
+                    "discount_rate": 0.15,
+                    "in_stock": True,
+                    "delivery_date": "2024-03-10"
+                },
+                {
+                    "sku": "SKU-0042",
+                    "description": "LED desk lamp with wireless charger",
+                    "quantity": 8,
+                    "unit_price": 65.75,
+                    "status": "pending",
+                    "discount_rate": 0.05,
+                    "in_stock": False,
+                    "delivery_date": "2024-03-15"
+                }
+            ]
         }
     }
 
@@ -445,6 +557,7 @@ def render_overview_page():
       - **Boolean arrays**: Coverage active status
       - **Date arrays**: Renewal dates
     - **Purchase Order**: Contains object arrays for line items with multiple properties
+    - **Line Item Constraint Playground**: Purpose-built object array with strict property constraints
     
     ### 🔍 What to Test
     
@@ -500,6 +613,51 @@ def render_overview_page():
                         "item_code": {"type": "string", "required": True},
                         "quantity": {"type": "integer", "min_value": 1},
                         "unit_price": {"type": "number", "min_value": 0}
+                    }
+                }
+            }
+        }), language="yaml")
+        
+        st.markdown("**Constraint Playground Schema**")
+        st.code(yaml.dump({
+            "line_items": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "sku": {
+                            "type": "string",
+                            "required": True,
+                            "pattern": "^SKU-[0-9]{4}$"
+                        },
+                        "description": {
+                            "type": "string",
+                            "required": True,
+                            "min_length": 5,
+                            "max_length": 60
+                        },
+                        "quantity": {
+                            "type": "integer",
+                            "required": True,
+                            "min_value": 1,
+                            "max_value": 25
+                        },
+                        "unit_price": {
+                            "type": "number",
+                            "required": True,
+                            "min_value": 0.01,
+                            "max_value": 500.00
+                        },
+                        "status": {
+                            "type": "enum",
+                            "required": True,
+                            "choices": ["pending", "approved", "backordered", "canceled"]
+                        },
+                        "discount_rate": {
+                            "type": "number",
+                            "min_value": 0,
+                            "max_value": 0.5
+                        }
                     }
                 }
             }
@@ -665,9 +823,22 @@ def render_object_array_page(test_schemas: Dict, test_data: Dict):
     st.header("Object Array Editor Testing")
     st.markdown("Test editing arrays of objects using table-style interface")
 
+    available_schemas = [
+        name
+        for name, schema_config in test_schemas.items()
+        if any(
+            field.get("type") == "array" and field.get("items", {}).get("type") == "object"
+            for field in schema_config.get("fields", {}).values()
+        )
+    ]
+
+    if not available_schemas:
+        st.warning("No schemas with object array fields are available.")
+        return
+
     schema_choice = st.selectbox(
         "Select Test Schema",
-        ["purchase_order"],
+        available_schemas,
         format_func=lambda x: test_schemas[x]["title"]
     )
 
@@ -711,6 +882,31 @@ def render_object_array_page(test_schemas: Dict, test_data: Dict):
         for field_name, field_config in object_array_fields.items():
             st.markdown(f"### {field_config.get('label', field_name)}")
             st.caption(field_config.get('help', 'No description provided.'))
+            properties = field_config.get("items", {}).get("properties", {})
+            constraint_lines = []
+            for prop_name, prop_config in properties.items():
+                hints: List[str] = []
+                if prop_config.get("required"):
+                    hints.append("required")
+                if prop_config.get("min_length") is not None:
+                    hints.append(f"min length {prop_config['min_length']}")
+                if prop_config.get("max_length") is not None:
+                    hints.append(f"max length {prop_config['max_length']}")
+                if prop_config.get("pattern"):
+                    hints.append(f"pattern {prop_config['pattern']}")
+                if prop_config.get("min_value") is not None:
+                    hints.append(f"min {prop_config['min_value']}")
+                if prop_config.get("max_value") is not None:
+                    hints.append(f"max {prop_config['max_value']}")
+                if prop_config.get("step") is not None:
+                    hints.append(f"step {prop_config['step']}")
+                if prop_config.get("choices"):
+                    rendered_choices = ", ".join(map(str, prop_config["choices"]))
+                    hints.append(f"choices [{rendered_choices}]")
+                if hints:
+                    constraint_lines.append(f"- `{prop_name}`: {', '.join(hints)}")
+            if constraint_lines:
+                st.markdown("**Constraints to explore:**\n" + "\n".join(constraint_lines))
             current_array = current_data.get(field_name, [])
             updated_values[field_name] = render_object_array_editor(field_name, field_config, current_array)
 
@@ -1107,74 +1303,54 @@ def validate_scalar_item(field_path: str, value: Any, item_type: str, items_conf
 
 def render_object_array_editor(field_name: str, field_config: Dict[str, Any], current_value: List[Dict]) -> List[Dict]:
     """Production-aligned editor for arrays of objects using Streamlit's data_editor."""
+    return _render_object_array_editor(field_name, field_config, current_value)
+
+
+def _render_object_array_editor(field_name: str, field_config: Dict[str, Any], current_value: List[Dict]) -> List[Dict]:
+    """Production-aligned editor for arrays of objects using Streamlit's data_editor."""
     import pandas as pd
 
     items_config = field_config.get("items", {})
     properties = items_config.get("properties", {})
 
     working_array = list(current_value or [])
-    column_config = generate_column_config(properties)
-
     SandboxSessionManager.sync_array_field(field_name, working_array)
 
+    data_editor_columns: List[str] = list(properties.keys())
+    if working_array:
+        for obj in working_array:
+            for key in obj.keys():
+                if key not in data_editor_columns:
+                    data_editor_columns.append(key)
+
+    if working_array:
+        df = pd.DataFrame(working_array)
+        if data_editor_columns:
+            df = df.reindex(columns=data_editor_columns)
+    else:
+        df = pd.DataFrame(columns=data_editor_columns)
+
+    for column_name, prop_config in properties.items():
+        if prop_config.get("type") == "date" and column_name in df.columns:
+            df[column_name] = pd.to_datetime(df[column_name], errors="coerce")
+
+    column_config = generate_column_config(properties)
+
     with st.container():
-        st.info("How to edit: Click cells to edit values directly in the table. Use 'Add Row' to add new items. Use the row deletion section below to remove rows.")
+        st.markdown(f"**{field_config.get('label', field_name)}**")
+        st.caption("Use the built-in toolbar to add rows and the row menu to delete entries.")
 
-        col1, col2 = st.columns([3, 1])
+        edited_df = st.data_editor(
+            df,
+            column_config=column_config,
+            num_rows="dynamic",
+            use_container_width=True,
+            key=f"data_editor_{field_name}",
+            hide_index=True
+        )
 
-        with col1:
-            st.markdown(f"**{field_config.get('label', field_name)}**")
-
-        with col2:
-            if st.button("Add Row", key=f"add_row_{field_name}"):
-                new_object = create_default_object(properties)
-                working_array.append(new_object)
-                SandboxSessionManager.sync_array_field(field_name, working_array)
-                st.rerun()
-
-        if working_array:
-            df = pd.DataFrame(working_array)
-
-            edited_df = st.data_editor(
-                df,
-                column_config=column_config,
-                num_rows="dynamic",
-                use_container_width=True,
-                key=f"data_editor_{field_name}",
-                hide_index=False
-            )
-
-            working_array = edited_df.to_dict('records')
-            working_array = clean_object_array(working_array)
-            SandboxSessionManager.sync_array_field(field_name, working_array)
-
-            if len(working_array) > 0:
-                st.markdown("#### Manual Row Operations")
-                col1, col2 = st.columns([2, 1])
-
-                with col1:
-                    def _format_row(idx: int) -> str:
-                        row = working_array[idx]
-                        first_key = next(iter(row.keys()), "N/A") if row else "N/A"
-                        first_value = row.get(first_key, "N/A") if row else "Empty"
-                        return f"Row {idx}: {first_value}"
-
-                    row_to_delete = st.selectbox(
-                        "Select row to delete:",
-                        options=list(range(len(working_array))),
-                        format_func=_format_row,
-                        key=f"delete_row_select_{field_name}"
-                    )
-
-                with col2:
-                    if st.button("Delete Selected Row", key=f"delete_row_{field_name}"):
-                        if 0 <= row_to_delete < len(working_array):
-                            working_array.pop(row_to_delete)
-                            SandboxSessionManager.sync_array_field(field_name, working_array)
-                            st.success(f"Deleted row {row_to_delete}")
-                            st.rerun()
-        else:
-            st.info("No items in array. Click 'Add Row' to add the first item.")
+        working_array = clean_object_array(edited_df.to_dict("records"), properties)
+        SandboxSessionManager.sync_array_field(field_name, working_array)
 
         validation_errors = validate_object_array(field_name, working_array, items_config)
         if validation_errors:
@@ -1242,6 +1418,14 @@ def generate_column_config(properties: Dict[str, Dict[str, Any]]) -> Dict[str, A
                 help=help_text,
                 required=required
             )
+        elif prop_type == "enum":
+            column_config[prop_name] = st.column_config.SelectboxColumn(
+                label=label,
+                help=help_text,
+                required=required,
+                options=prop_config.get("choices", []),
+                default=prop_config.get("default")
+            )
         else:
             # Default to text column
             column_config[prop_name] = st.column_config.TextColumn(
@@ -1262,24 +1446,53 @@ def create_default_object(properties: Dict[str, Dict[str, Any]]) -> Dict[str, An
     
     return default_object
 
-def clean_object_array(array: List[Dict]) -> List[Dict]:
-    """Clean object array by removing NaN values and converting types"""
+def clean_object_array(
+    array: List[Dict],
+    properties: Optional[Dict[str, Dict[str, Any]]] = None
+) -> List[Dict]:
+    """Clean object array by removing NaN values and normalising types using schema hints."""
     import pandas as pd
     import numpy as np
     
     cleaned_array = []
+    properties = properties or {}
     for obj in array:
         cleaned_obj = {}
         for key, value in obj.items():
+            prop_config = properties.get(key, {})
+            prop_type = prop_config.get("type")
+            
             # Handle pandas NaN values
             if pd.isna(value):
                 cleaned_obj[key] = None
-            elif isinstance(value, np.integer):
-                cleaned_obj[key] = int(value)
-            elif isinstance(value, np.floating):
-                cleaned_obj[key] = float(value)
             else:
-                cleaned_obj[key] = value
+                normalised_value = value
+
+                if isinstance(value, np.bool_):
+                    normalised_value = bool(value)
+                elif isinstance(value, np.integer):
+                    normalised_value = int(value)
+                elif isinstance(value, np.floating):
+                    normalised_value = float(value)
+
+                if prop_type == "number" and normalised_value is not None:
+                    try:
+                        normalised_value = float(normalised_value)
+                    except (TypeError, ValueError):
+                        pass
+                elif prop_type == "integer" and normalised_value is not None:
+                    try:
+                        normalised_value = int(normalised_value)
+                    except (TypeError, ValueError):
+                        pass
+                elif prop_type == "boolean" and normalised_value is not None:
+                    normalised_value = bool(normalised_value)
+
+                cleaned_obj[key] = normalised_value
+
+        # Ensure all schema-defined properties are present so validation can flag omissions
+        for prop_name in properties.keys():
+            cleaned_obj.setdefault(prop_name, None)
         cleaned_array.append(cleaned_obj)
     
     return cleaned_array
