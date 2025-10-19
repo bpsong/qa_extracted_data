@@ -447,123 +447,73 @@ class TestObjectArrayEditor(unittest.TestCase):
         self.assertIn("description", errors[0])
         self.assertIn("is required", errors[0])
 
-    @patch('streamlit.data_editor')
-    @patch('streamlit.button')
-    @patch('streamlit.columns')
-    @patch('streamlit.container')
-    def test_render_object_array_editor_empty_array(self, mock_container, mock_columns, mock_button, mock_data_editor):
-        """Test rendering object array editor with empty array"""
-        # Mock Streamlit components with proper context manager support
-        mock_container.return_value.__enter__ = Mock(return_value=None)
-        mock_container.return_value.__exit__ = Mock(return_value=None)
-        
-        # Mock columns to return context manager objects
-        mock_col1 = Mock()
-        mock_col1.__enter__ = Mock(return_value=None)
-        mock_col1.__exit__ = Mock(return_value=None)
-        mock_col2 = Mock()
-        mock_col2.__enter__ = Mock(return_value=None)
-        mock_col2.__exit__ = Mock(return_value=None)
-        mock_columns.return_value = [mock_col1, mock_col2]
-        
-        mock_button.return_value = False
-        
-        field_config = {
-            "items": {
-                "properties": self.line_item_properties
-            }
-        }
-        
-        result = render_object_array_editor("line_items", field_config, [])
-        
-        # Should return empty array
-        self.assertEqual(result, [])
-        
-        # data_editor should not be called for empty arrays
-        mock_data_editor.assert_not_called()
-
-    @patch('streamlit.data_editor')
-    @patch('streamlit.button')
-    @patch('streamlit.columns')
-    @patch('streamlit.container')
-    @patch('streamlit.info')
     @patch('streamlit.success')
-    def test_render_object_array_editor_with_data(self, mock_success, mock_info, mock_container, mock_columns, mock_button, mock_data_editor):
-        """Test rendering object array editor with existing data"""
-        # Mock Streamlit components with proper context manager support
-        mock_container.return_value.__enter__ = Mock(return_value=None)
-        mock_container.return_value.__exit__ = Mock(return_value=None)
-        
-        # Mock columns to return context manager objects
-        mock_col1 = Mock()
-        mock_col1.__enter__ = Mock(return_value=None)
-        mock_col1.__exit__ = Mock(return_value=None)
-        mock_col2 = Mock()
-        mock_col2.__enter__ = Mock(return_value=None)
-        mock_col2.__exit__ = Mock(return_value=None)
-        mock_columns.return_value = [mock_col1, mock_col2]
-        
-        mock_button.return_value = False
-        
-        # Mock data_editor to return modified DataFrame
-        mock_df = pd.DataFrame(self.sample_line_items)
-        mock_data_editor.return_value = mock_df
-        
-        field_config = {
-            "items": {
-                "properties": self.line_item_properties
-            }
-        }
-        
-        result = render_object_array_editor("line_items", field_config, self.sample_line_items)
-        
-        # Should return the data (cleaned)
-        self.assertEqual(len(result), 2)
-        
-        # data_editor should be called
-        mock_data_editor.assert_called_once()
-
-    @patch('streamlit.rerun')
+    @patch('streamlit.error')
     @patch('streamlit.data_editor')
-    @patch('streamlit.button')
-    @patch('streamlit.columns')
+    @patch('streamlit.caption')
+    @patch('streamlit.markdown')
     @patch('streamlit.container')
-    def test_render_object_array_editor_add_row(self, mock_container, mock_columns, mock_button, mock_data_editor, mock_rerun):
-        """Test adding row to object array editor"""
-        # Mock Streamlit components with proper context manager support
+    def test_render_object_array_editor_empty_array(self, mock_container, mock_markdown, mock_caption, mock_data_editor, mock_error, mock_success):
+        """Empty arrays should render and keep state without errors."""
         mock_container.return_value.__enter__ = Mock(return_value=None)
         mock_container.return_value.__exit__ = Mock(return_value=None)
-        
-        # Mock columns to return context manager objects
-        mock_col1 = Mock()
-        mock_col1.__enter__ = Mock(return_value=None)
-        mock_col1.__exit__ = Mock(return_value=None)
-        mock_col2 = Mock()
-        mock_col2.__enter__ = Mock(return_value=None)
-        mock_col2.__exit__ = Mock(return_value=None)
-        mock_columns.return_value = [mock_col1, mock_col2]
-        
-        mock_button.return_value = True  # Simulate button click
-        mock_rerun.side_effect = RuntimeError("rerun invoked")
-        
-        # Mock data_editor
-        extended_data = self.sample_line_items + [create_default_object(self.line_item_properties)]
-        mock_df = pd.DataFrame(extended_data)
-        mock_data_editor.return_value = mock_df
-        
-        field_config = {
-            "items": {
-                "properties": self.line_item_properties
-            }
-        }
-        
-        with self.assertRaises(RuntimeError):
-            render_object_array_editor("line_items", field_config, self.sample_line_items)
-    
+        mock_data_editor.return_value = pd.DataFrame()
+
+        field_config = {"items": {"properties": self.line_item_properties}}
+
+        result = render_object_array_editor("line_items", field_config, [])
+
+        self.assertEqual(result, [])
+        mock_data_editor.assert_called_once()
+        mock_error.assert_not_called()
+        mock_success.assert_not_called()
+
+    @patch('streamlit.success')
+    @patch('streamlit.error')
+    @patch('streamlit.data_editor')
+    @patch('streamlit.caption')
+    @patch('streamlit.markdown')
+    @patch('streamlit.container')
+    def test_render_object_array_editor_with_data(self, mock_container, mock_markdown, mock_caption, mock_data_editor, mock_error, mock_success):
+        """Existing data should round-trip through the editor and show success."""
+        mock_container.return_value.__enter__ = Mock(return_value=None)
+        mock_container.return_value.__exit__ = Mock(return_value=None)
+        mock_data_editor.return_value = pd.DataFrame(self.sample_line_items)
+
+        field_config = {"items": {"properties": self.line_item_properties}}
+
+        result = render_object_array_editor("line_items", field_config, self.sample_line_items)
+
+        self.assertEqual(result, self.sample_line_items)
+        mock_data_editor.assert_called_once()
+        mock_error.assert_not_called()
+        mock_success.assert_called()
+
+    @patch('streamlit.success')
+    @patch('streamlit.error')
+    @patch('streamlit.data_editor')
+    @patch('streamlit.caption')
+    @patch('streamlit.markdown')
+    @patch('streamlit.container')
+    def test_render_object_array_editor_handles_added_rows(self, mock_container, mock_markdown, mock_caption, mock_data_editor, mock_error, mock_success):
+        """Rows added via data_editor should sync back into session state."""
+        mock_container.return_value.__enter__ = Mock(return_value=None)
+        mock_container.return_value.__exit__ = Mock(return_value=None)
+
+        extended_rows = self.sample_line_items + [create_default_object(self.line_item_properties)]
+        mock_data_editor.return_value = pd.DataFrame(extended_rows)
+
+        field_config = {"items": {"properties": self.line_item_properties}}
+
+        result = render_object_array_editor("line_items", field_config, self.sample_line_items)
+
+        self.assertEqual(len(result), 3)
+        self.assertEqual(result[-1]["item_code"], "")
         form_data = _FAKE_STREAMLIT_SESSION.get(SandboxSessionManager.FORM_DATA_KEY, {})
         self.assertIn("line_items", form_data)
         self.assertEqual(len(form_data["line_items"]), 3)
-        mock_rerun.assert_called_once()
+        mock_error.assert_called()
+        mock_success.assert_not_called()
 
 
 class TestObjectArrayEditorIntegration(unittest.TestCase):

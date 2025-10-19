@@ -301,6 +301,7 @@ class FormGenerator:
             if field_type == 'array':
                 items_config = field_config.get('items', {})
                 item_type = items_config.get('type', 'string')
+                properties = items_config.get("properties", {})
                 
                 # For object arrays, check data_editor key first
                 if item_type == 'object':
@@ -310,12 +311,13 @@ class FormGenerator:
                         # Handle pandas DataFrame from data_editor
                         if hasattr(value, 'to_dict'):
                             # Convert DataFrame to list of dicts
-                            form_data[field_name] = value.to_dict('records')
+                            records = value.to_dict('records')
                         elif isinstance(value, list):
-                            form_data[field_name] = value
+                            records = value
                         else:
                             # Fallback to empty array if value is unexpected type
-                            form_data[field_name] = []
+                            records = []
+                        form_data[field_name] = FormGenerator._clean_object_array(records, properties)
                         continue
                 
                 # For scalar arrays, use field_{field_name} key
@@ -325,7 +327,10 @@ class FormGenerator:
                     if value is None:
                         form_data[field_name] = []
                     elif isinstance(value, list):
-                        form_data[field_name] = value
+                        if item_type == 'object':
+                            form_data[field_name] = FormGenerator._clean_object_array(value, properties)
+                        else:
+                            form_data[field_name] = value
                     else:
                         # Single value - wrap in array
                         form_data[field_name] = [value]
@@ -336,14 +341,25 @@ class FormGenerator:
                 json_array_key = f"json_array_{field_name}"
                 
                 if array_key in st.session_state and st.session_state[array_key] is not None:
-                    form_data[field_name] = st.session_state[array_key]
+                    fallback_value = st.session_state[array_key]
+                    if item_type == 'object' and isinstance(fallback_value, list):
+                        form_data[field_name] = FormGenerator._clean_object_array(fallback_value, properties)
+                    else:
+                        form_data[field_name] = fallback_value
                 elif json_array_key in st.session_state and st.session_state[json_array_key] is not None:
                     try:
                         value = st.session_state[json_array_key]
                         if isinstance(value, str):
-                            form_data[field_name] = json.loads(value)
+                            parsed = json.loads(value)
+                            if item_type == 'object' and isinstance(parsed, list):
+                                form_data[field_name] = FormGenerator._clean_object_array(parsed, properties)
+                            else:
+                                form_data[field_name] = parsed
                         else:
-                            form_data[field_name] = value
+                            if item_type == 'object' and isinstance(value, list):
+                                form_data[field_name] = FormGenerator._clean_object_array(value, properties)
+                            else:
+                                form_data[field_name] = value
                     except json.JSONDecodeError as e:
                         logger.warning(f"Invalid JSON for array {field_name}: {e}")
                         form_data[field_name] = []
@@ -1012,107 +1028,61 @@ class FormGenerator:
     @staticmethod
     def _render_object_array_editor(field_name: str, field_config: Dict[str, Any], current_value: List[Any]) -> List[Any]:
         """
-        Enhanced object array editor with manual row operations, NaN cleanup, and integer column config.
-        Ported from sandbox with ASCII text labels for production compatibility.
+        Streamlined object array editor that relies on Streamlit's native data_editor controls
+        for adding and removing rows while preserving production validation and state sync.
         """
         import pandas as pd
-        import numpy as np
         
         items_config = field_config.get("items", {})
         properties = items_config.get("properties", {})
         
-        # Initialize array if empty
-        if not current_value:
-            current_value = []
-        
-        # Create a copy to work with
-        working_array = current_value.copy()
-        
-        # Generate column configuration for st.data_editor
+        working_array = list(current_value or [])
+
+        # Prepare DataFrame for data_editor, ensuring consistent column ordering
+        column_order: List[str] = list(properties.keys())
+        for obj in working_array:
+            for key in obj.keys():
+                if key not in column_order:
+                    column_order.append(key)
+
+        if working_array:
+            df = pd.DataFrame(working_array)
+            if column_order:
+                df = df.reindex(columns=column_order)
+        else:
+            df = pd.DataFrame(columns=column_order)
+
+        for column_name, prop_config in properties.items():
+            if prop_config.get("type") == "date" and column_name in df.columns:
+                df[column_name] = pd.to_datetime(df[column_name], errors="coerce")
+
         column_config = FormGenerator._generate_column_config(properties)
         
-        # Container for the object array editor
         with st.container():
-            # Instructions for object array editing (ASCII text only)
-            st.info("How to edit: Click cells to edit values directly in the table. Use 'Add Row' to add new items. Use the row deletion section below to remove rows.")
-            
-            col1, col2 = st.columns([3, 1])
-            
-            with col1:
-                st.markdown(f"**{field_config.get('label', field_name)}**")
-            
-            with col2:
-                # Add row button with field-specific key
-                if st.button("Add Row", key=f"add_row_{field_name}"):
-                    new_object = FormGenerator._create_default_object(properties)
-                    working_array.append(new_object)
-                    # Synchronize after adding row
-                    FormGenerator._sync_array_to_session(field_name, working_array)
-                    st.rerun()  # Force immediate rerun to show new row
-            
-            # Display the data editor if we have data
-            if working_array:
-                # Convert to DataFrame-like structure for st.data_editor
-                df = pd.DataFrame(working_array)
-                for column_name, prop_config in properties.items():
-                    if prop_config.get("type") == "date" and column_name in df.columns:
-                        df[column_name] = pd.to_datetime(df[column_name], errors="coerce")
-                
-                # Use st.data_editor for table editing with delete capability
-                edited_df = st.data_editor(
-                    df,
-                    column_config=column_config,
-                    num_rows="dynamic",
-                    use_container_width=True,
-                    key=f"data_editor_{field_name}",
-                    hide_index=False  # Show index to help with row identification
-                )
-                
-                # Convert back to list of dictionaries
-                working_array = edited_df.to_dict('records')
-                
-                # Clean up any NaN values that pandas might introduce
-                working_array = FormGenerator._clean_object_array(working_array, properties)
-                
-                # Synchronize after data_editor changes (cell edits)
-                FormGenerator._sync_array_to_session(field_name, working_array)
-                
-                # Add manual row deletion interface
-                if len(working_array) > 0:
-                    st.markdown("#### Manual Row Operations")
-                    col1, col2 = st.columns([2, 1])
-                    
-                    with col1:
-                        row_to_delete = st.selectbox(
-                            "Select row to delete:",
-                            options=list(range(len(working_array))),
-                            format_func=lambda x: f"Row {x}: {working_array[x].get(list(working_array[x].keys())[0], 'N/A') if working_array[x] else 'Empty'}",
-                            key=f"delete_row_select_{field_name}"
-                        )
-                    
-                    with col2:
-                        if st.button("Delete Selected Row", key=f"delete_row_{field_name}"):
-                            if 0 <= row_to_delete < len(working_array):
-                                working_array.pop(row_to_delete)
-                                # Synchronize after deleting row
-                                FormGenerator._sync_array_to_session(field_name, working_array)
-                                st.success(f"Deleted row {row_to_delete}")
-                                st.rerun()
-            else:
-                st.info("No items in array. Click 'Add Row' to add the first item.")
-            
-            # Validation feedback
+            st.markdown(f"**{field_config.get('label', field_name)}**")
+            st.caption("Edit cells directly. Use the '+' menu to add rows and the row menu to delete entries.")
+
+            edited_df = st.data_editor(
+                df,
+                column_config=column_config,
+                num_rows="dynamic",
+                use_container_width=True,
+                key=f"data_editor_{field_name}",
+                hide_index=True
+            )
+
+            working_array = FormGenerator._clean_object_array(edited_df.to_dict("records"), properties)
+
+            # Synchronize after data_editor changes (cell edits)
+            FormGenerator._sync_array_to_session(field_name, working_array)
+
             validation_errors = FormGenerator._validate_object_array(field_name, working_array, items_config)
             if validation_errors:
                 for error in validation_errors:
                     st.error(error)
-            else:
-                if working_array:  # Only show success if array is not empty
-                    st.success(f"{len(working_array)} objects valid")
-        
-        # Ensure final synchronization to session state and SessionManager
-        FormGenerator._sync_array_to_session(field_name, working_array)
-        
+            elif working_array:
+                st.success(f"{len(working_array)} objects valid")
+
         return working_array
     
     @staticmethod

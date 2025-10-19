@@ -190,6 +190,30 @@ class TestDiffUtils:
         assert "Before:** `True`" in formatted
         assert "After:** `False`" in formatted
 
+    def test_format_diff_for_display_object_array_table(self):
+        """Object array changes should be summarised using markdown tables."""
+        original = {
+            "line_items": [
+                {"sku": "SKU-0001", "quantity": 2, "unit_price": 10.0},
+                {"sku": "SKU-0002", "quantity": 1, "unit_price": 4.5},
+            ]
+        }
+        modified = {
+            "line_items": [
+                {"sku": "SKU-0001", "quantity": 3, "unit_price": 10.0},
+                {"sku": "SKU-0003", "quantity": 2, "unit_price": 7.0},
+            ]
+        }
+
+        diff = calculate_diff(original, modified)
+        formatted = format_diff_for_display(diff, original, modified)
+
+        assert "Array Changes" in formatted
+        assert "**line_items:**" in formatted
+        assert "| # | sku | quantity | unit_price |" in formatted
+        assert "SKU-0003" in formatted
+        assert "3" in formatted
+
     def test_format_diff_for_streamlit(self):
         """Test formatting diff for Streamlit components."""
         original = {"name": "John", "age": 30}

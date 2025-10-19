@@ -253,6 +253,70 @@ def has_changes(diff: Dict[str, Any]) -> bool:
     return any(change_type in diff and diff[change_type] for change_type in change_types)
 
 
+def _is_object_array(value: Any) -> bool:
+    """Return True when value looks like an array of dictionaries."""
+    if not isinstance(value, list):
+        return False
+    return any(isinstance(item, dict) for item in value)
+
+
+def _escape_markdown_cell(text: str) -> str:
+    """Escape special markdown characters for table cells."""
+    if text is None:
+        return ""
+    escaped = text.replace("|", r"\|")
+    escaped = escaped.replace("\n", "<br>")
+    escaped = escaped.replace("\r", "")
+    return escaped
+
+
+def _format_object_array_table(rows: List[Dict[str, Any]]) -> str:
+    """Render object array rows as a markdown table."""
+    if not rows:
+        return "_No rows_"
+
+    column_order: List[str] = []
+    for row in rows:
+        if isinstance(row, dict):
+            for key in row.keys():
+                if key not in column_order:
+                    column_order.append(key)
+
+    if not column_order:
+        column_order = ["value"]
+
+    header = ["#"] + column_order
+    table_lines = [
+        "| " + " | ".join(header) + " |",
+        "|" + "|".join(["---"] * len(header)) + "|",
+    ]
+
+    for idx, row in enumerate(rows):
+        cells: List[str] = [str(idx)]
+        for column in column_order:
+            raw_value = row.get(column) if isinstance(row, dict) else None
+            formatted = _format_value(raw_value)
+            cells.append(_escape_markdown_cell(formatted))
+        table_lines.append("| " + " | ".join(cells) + " |")
+
+    return "\n".join(table_lines)
+
+
+def _format_object_array_change(field_name: str, original_rows: List[Dict[str, Any]], modified_rows: List[Dict[str, Any]]) -> List[str]:
+    """Create markdown lines summarising object array changes."""
+    lines: List[str] = [f"**{field_name}:**"]
+
+    lines.append("  **Before**")
+    lines.append(_format_object_array_table(original_rows))
+    lines.append("")
+
+    lines.append("  **After**")
+    lines.append(_format_object_array_table(modified_rows))
+    lines.append("")
+
+    return lines
+
+
 def format_diff_for_display(diff: Dict[str, Any], original_data: Optional[Dict[str, Any]] = None, modified_data: Optional[Dict[str, Any]] = None) -> str:
     """
     Format diff output for display in Streamlit.
@@ -392,52 +456,70 @@ def format_diff_for_display(diff: Dict[str, Any], original_data: Optional[Dict[s
         formatted_lines.append("")
 
     # Handle array changes with simple before/after display
-    array_changes = {}
-    
+    array_changes: Dict[str, bool] = {}
+
+    def _register_array_field(path_entry: Any) -> None:
+        """Track array field names detected from DeepDiff paths or serialized entries."""
+        for name in _extract_array_field_names(path_entry):
+            if name and name not in array_changes:
+                array_changes[name] = True
+
+    def _extract_array_field_names(path_entry: Any) -> List[str]:
+        """Return the relevant top-level field names for array changes."""
+        names: List[str] = []
+
+        try:
+            path_str = str(path_entry)
+        except Exception:
+            path_str = ""
+
+        if path_str:
+            matches = re.findall(r"root\['([^']+)'\]", path_str)
+            for match in matches:
+                if match and match not in names:
+                    names.append(match)
+
+        if not names:
+            tokens = _parse_deepdiff_path_tokens(path_entry)
+            if tokens:
+                for token in tokens:
+                    if isinstance(token, str):
+                        if token and token not in names:
+                            names.append(token)
+                        break  # Only need the first field token
+
+        if not names:
+            cleaned = _clean_path(path_entry)
+            if cleaned:
+                base_name = re.split(r"\s*\[", cleaned, 1)[0].strip()
+                if base_name and base_name not in names:
+                    names.append(base_name)
+
+        return names
+
     # Collect array field names that have changes
     if 'iterable_item_added' in diff:
         added_sec = diff.get('iterable_item_added')
         if isinstance(added_sec, dict):
             for path in added_sec.keys():
-                field_name = _clean_path(path)
-                if field_name not in array_changes:
-                    array_changes[field_name] = True
+                _register_array_field(path)
         elif isinstance(added_sec, str):
-            # Handle string format from serialized diffs
-            # Extract field names from paths like "<root['Serial Numbers'][0]"
-            field_matches = re.findall(r"root\['([^']+)'\]", added_sec)
-            for field_name in set(field_matches):
-                if field_name not in array_changes:
-                    array_changes[field_name] = True
+            _register_array_field(added_sec)
         elif added_sec is not None and hasattr(added_sec, '__iter__'):
-            # Handle list/set format
             for item in added_sec:
-                path_str = str(item)
-                field_name = _clean_path(path_str)
-                if field_name not in array_changes:
-                    array_changes[field_name] = True
-    
+                _register_array_field(item)
+
     if 'iterable_item_removed' in diff:
         removed_sec = diff.get('iterable_item_removed')
         if isinstance(removed_sec, dict):
             for path in removed_sec.keys():
-                field_name = _clean_path(path)
-                if field_name not in array_changes:
-                    array_changes[field_name] = True
+                _register_array_field(path)
         elif isinstance(removed_sec, str):
-            # Handle string format from serialized diffs
-            field_matches = re.findall(r"root\['([^']+)'\]", removed_sec)
-            for field_name in set(field_matches):
-                if field_name not in array_changes:
-                    array_changes[field_name] = True
+            _register_array_field(removed_sec)
         elif removed_sec is not None and hasattr(removed_sec, '__iter__'):
-            # Handle list/set format
             for item in removed_sec:
-                path_str = str(item)
-                field_name = _clean_path(path_str)
-                if field_name not in array_changes:
-                    array_changes[field_name] = True
-    
+                _register_array_field(item)
+
     # Display array changes with simple before/after format
     if array_changes:
         formatted_lines.append("### 📋 **Array Changes**")
@@ -447,14 +529,19 @@ def format_diff_for_display(diff: Dict[str, Any], original_data: Optional[Dict[s
             # Get before and after values from original and modified data
             before_value = source_original.get(field_name, [])
             after_value = source_modified.get(field_name, [])
-            
-            # Format as simple lists
-            before_str = ', '.join([str(v) for v in before_value]) if before_value else '(empty)'
-            after_str = ', '.join([str(v) for v in after_value]) if after_value else '(empty)'
-            
-            formatted_lines.append(f"**{field_name}:**")
-            formatted_lines.append(f"  - ❌ **Before:** `[{before_str}]`")
-            formatted_lines.append(f"  - ✅ **After:** `[{after_str}]`")
+
+            if _is_object_array(before_value) or _is_object_array(after_value):
+                before_rows = before_value if isinstance(before_value, list) else []
+                after_rows = after_value if isinstance(after_value, list) else []
+                formatted_lines.extend(_format_object_array_change(field_name, before_rows, after_rows))
+            else:
+                # Format as simple lists for scalar arrays
+                before_str = ', '.join([str(v) for v in before_value]) if before_value else '(empty)'
+                after_str = ', '.join([str(v) for v in after_value]) if after_value else '(empty)'
+
+                formatted_lines.append(f"**{field_name}:**")
+                formatted_lines.append(f"  - ❌ **Before:** `[{before_str}]`")
+                formatted_lines.append(f"  - ✅ **After:** `[{after_str}]`")
         formatted_lines.append("")
 
     if 'type_changes' in diff:
