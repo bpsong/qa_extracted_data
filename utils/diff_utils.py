@@ -52,6 +52,45 @@ def _format_value_for_field(value: Any, field_name: str) -> str:
     return _format_value(value)
 
 
+def _normalize_value_for_diff(value: Any) -> Any:
+    """
+    Normalize values before diffing so semantically equivalent data compares equal.
+
+    - Empty strings and None collapse to None
+    - Numeric strings convert to numbers
+    - Lists and dicts normalise recursively
+    """
+    if value is None or value == "":
+        return None
+
+    if isinstance(value, str):
+        stripped = value.strip()
+        if not stripped:
+            return None
+        try:
+            if "." in stripped:
+                return float(stripped)
+            return int(stripped)
+        except ValueError:
+            return stripped
+
+    if isinstance(value, list):
+        return [_normalize_value_for_diff(item) for item in value]
+
+    if isinstance(value, dict):
+        return _normalize_mapping_for_diff(value)
+
+    return value
+
+
+def _normalize_mapping_for_diff(data: Dict[str, Any]) -> Dict[str, Any]:
+    """Normalise every value in a mapping without mutating the original."""
+    result: Dict[str, Any] = {}
+    for key, value in data.items():
+        result[key] = _normalize_value_for_diff(value)
+    return result
+
+
 def calculate_diff(original: Dict[str, Any], modified: Dict[str, Any], fields: Optional[Set[str]] = None) -> Dict[str, Any]:
     """
     Calculate differences between original and modified data with comprehensive normalization.
@@ -83,6 +122,8 @@ def calculate_diff(original: Dict[str, Any], modified: Dict[str, Any], fields: O
         - iterable_item_added/removed: List/array changes
     """
     try:
+        logger.info("[DEBUG calculate_diff] === STARTING DIFF CALCULATION ===")
+        
         # Create normalized copies to avoid modifying originals
         orig = dict(original)
         mod = dict(modified)
@@ -93,49 +134,33 @@ def calculate_diff(original: Dict[str, Any], modified: Dict[str, Any], fields: O
             orig = {k: original.get(k) for k in fields if k in original}
             mod = {k: modified.get(k) for k in fields if k in modified}
 
-        def normalize_value(v: Any) -> Any:
-            """Normalize values for comparison.
-            
-            Handles:
-            - Empty strings and None values converted to None
-            - Numeric strings converted to int or float
-            - Recursive normalization of lists and dictionaries
-            """
-            if v is None or v == '':
-                return None  # Standardize empty values to None
-            if isinstance(v, str):
-                # Convert numeric strings to appropriate numeric types
-                v = v.strip()
-                try:
-                    if '.' in v:
-                        return float(v)  # Handle floating-point numbers
-                    return int(v)        # Handle integers
-                except ValueError:
-                    return v  # Return original string if not numeric
-            if isinstance(v, list):
-                return [normalize_value(i) for i in v]  # Recursively normalize list items
-            if isinstance(v, dict):
-                return normalize_dict(v)  # Recursively normalize dictionary
-            return v  # Return other types unchanged
-
-        def normalize_dict(d: Dict[str, Any]) -> Dict[str, Any]:
-            """Normalize dictionary values.
-            
-            Iterates through all key-value pairs, applies value normalization,
-            and preserves keys even when the normalized value is None so DeepDiff
-            can accurately detect additions/removals/changes between versions.
-            """
-            result = {}
-            for k, v in d.items():
-                normalized = normalize_value(v)
-                # Preserve keys even if the normalized value is None. This keeps the
-                # presence/absence of fields explicit for DeepDiff comparison.
-                result[k] = normalized
-            return result
+        # DEBUG: Log array fields before normalization
+        for key in orig.keys():
+            if isinstance(orig.get(key), list):
+                logger.info(f"[DEBUG calculate_diff] Original array field '{key}': {len(orig[key])} items")
+                if orig[key]:
+                    logger.info(f"[DEBUG calculate_diff]   First item: {orig[key][0]}")
+        for key in mod.keys():
+            if isinstance(mod.get(key), list):
+                logger.info(f"[DEBUG calculate_diff] Modified array field '{key}': {len(mod[key])} items")
+                if mod[key]:
+                    logger.info(f"[DEBUG calculate_diff]   First item: {mod[key][0]}")
 
         # Normalize both dictionaries
-        normalized_original = normalize_dict(orig)
-        normalized_modified = normalize_dict(mod)
+        normalized_original = _normalize_mapping_for_diff(orig)
+        normalized_modified = _normalize_mapping_for_diff(mod)
+        
+        # DEBUG: Log array fields after normalization
+        for key in normalized_original.keys():
+            if isinstance(normalized_original.get(key), list):
+                logger.info(f"[DEBUG calculate_diff] Normalized original array field '{key}': {len(normalized_original[key])} items")
+                if normalized_original[key]:
+                    logger.info(f"[DEBUG calculate_diff]   First item: {normalized_original[key][0]}")
+        for key in normalized_modified.keys():
+            if isinstance(normalized_modified.get(key), list):
+                logger.info(f"[DEBUG calculate_diff] Normalized modified array field '{key}': {len(normalized_modified[key])} items")
+                if normalized_modified[key]:
+                    logger.info(f"[DEBUG calculate_diff]   First item: {normalized_modified[key][0]}")
 
         # Calculate differences using DeepDiff with specific configuration
         diff = DeepDiff(
@@ -149,6 +174,11 @@ def calculate_diff(original: Dict[str, Any], modified: Dict[str, Any], fields: O
 
         # Convert to dictionary and process the diff
         diff_dict = diff.to_dict() if hasattr(diff, 'to_dict') else dict(diff)
+        
+        # DEBUG: Log what DeepDiff found
+        logger.info(f"[DEBUG calculate_diff] DeepDiff result keys: {list(diff_dict.keys())}")
+        for key in diff_dict.keys():
+            logger.info(f"[DEBUG calculate_diff]   {key}: {len(diff_dict[key]) if hasattr(diff_dict[key], '__len__') else 'N/A'} items")
 
         # Ensure all changes are captured in a consistent format
         processed_diff: Dict[str, Any] = {}
@@ -225,6 +255,47 @@ def calculate_diff(original: Dict[str, Any], modified: Dict[str, Any], fields: O
     except Exception as e:
         logger.error(f"Error calculating diff: {e}", exc_info=True)
         return {}
+
+
+def _collect_array_field_differences(
+    original_data: Optional[Dict[str, Any]],
+    modified_data: Optional[Dict[str, Any]]
+) -> Dict[str, Dict[str, List[Any]]]:
+    """
+    Identify top-level array fields whose contents differ between the original and modified data.
+
+    Returns a mapping of field name -> {"original": [...], "modified": [...]}
+    using the raw (non-normalised) arrays for display purposes.
+    """
+    original_dict = original_data if isinstance(original_data, dict) else {}
+    modified_dict = modified_data if isinstance(modified_data, dict) else {}
+
+    candidate_fields: Set[str] = set()
+    for source in (original_dict, modified_dict):
+        for key, value in source.items():
+            if isinstance(value, list):
+                candidate_fields.add(key)
+
+    array_diffs: Dict[str, Dict[str, List[Any]]] = {}
+
+    for field_name in candidate_fields:
+        original_value = original_dict.get(field_name, [])
+        modified_value = modified_dict.get(field_name, [])
+
+        normalized_original = (
+            _normalize_value_for_diff(original_value) if isinstance(original_value, list) else []
+        )
+        normalized_modified = (
+            _normalize_value_for_diff(modified_value) if isinstance(modified_value, list) else []
+        )
+
+        if normalized_original != normalized_modified:
+            array_diffs[field_name] = {
+                "original": original_value if isinstance(original_value, list) else [],
+                "modified": modified_value if isinstance(modified_value, list) else []
+            }
+
+    return array_diffs
 
 
 def has_changes(diff: Dict[str, Any]) -> bool:
@@ -335,6 +406,9 @@ def format_diff_for_display(diff: Dict[str, Any], original_data: Optional[Dict[s
     formatted_lines: List[str] = []
     formatted_lines.append("## 📝 **Changes Summary**\n")
 
+    array_field_diffs = _collect_array_field_differences(original_data, modified_data)
+    array_field_names = set(array_field_diffs.keys())
+
     # Process different types of changes
     def _iter_deepdiff_section(section):
         """
@@ -385,9 +459,29 @@ def format_diff_for_display(diff: Dict[str, Any], original_data: Optional[Dict[s
             # last resort
             yield str(section), None
 
+    def _is_array_field_path(path_obj: Any) -> bool:
+        if not array_field_names:
+            return False
+
+        tokens = _parse_deepdiff_path_tokens(path_obj)
+        if not tokens:
+            return False
+
+        has_list_index = any(isinstance(token, int) for token in tokens)
+        if not has_list_index:
+            return False
+
+        for token in tokens:
+            if isinstance(token, str) and token in array_field_names:
+                return True
+        return False
+
     if 'values_changed' in diff:
         formatted_lines.append("### 🔄 **Modified Fields**")
         for path, change in _iter_deepdiff_section(diff.get('values_changed')):
+            if _is_array_field_path(path):
+                continue
+
             if change is None:
                 # parse old/new from string representation if possible
                 s = str(path)
@@ -423,6 +517,9 @@ def format_diff_for_display(diff: Dict[str, Any], original_data: Optional[Dict[s
 
         if added_obj and hasattr(added_obj, "items"):
             for path, value in added_obj.items():
+                if _is_array_field_path(path):
+                    continue
+
                 field_name = _clean_path(path)
                 actual_value = modified_data.get(field_name) if modified_data else value
                 formatted_value = _format_value_for_field(actual_value, field_name)
@@ -432,6 +529,9 @@ def format_diff_for_display(diff: Dict[str, Any], original_data: Optional[Dict[s
                 formatted_lines.append("")  # Add line break between fields
         else:
             for path, _ in _iter_deepdiff_section(added_obj):
+                if _is_array_field_path(path):
+                    continue
+
                 field_name = _clean_path(str(path))
                 actual_value = _extract_value_from_data(str(path), modified_data) if modified_data else None
                 formatted_lines.append(f"**{field_name}:**")
@@ -446,103 +546,43 @@ def format_diff_for_display(diff: Dict[str, Any], original_data: Optional[Dict[s
         removed_obj = diff.get('dictionary_item_removed')
         if removed_obj and hasattr(removed_obj, "items"):
             for path, value in removed_obj.items():
+                if _is_array_field_path(path):
+                    continue
+
                 field_name = _clean_path(path)
                 formatted_value = _format_value_for_field(value, field_name)
                 formatted_lines.append(f"**{field_name}:** `{formatted_value}`")
         else:
             for path, _ in _iter_deepdiff_section(removed_obj):
+                if _is_array_field_path(path):
+                    continue
+
                 field_name = _clean_path(str(path))
                 formatted_lines.append(f"**{field_name}:** `[Removed]`")
         formatted_lines.append("")
 
-    # Handle array changes with simple before/after display
-    array_changes: Dict[str, bool] = {}
-
-    def _register_array_field(path_entry: Any) -> None:
-        """Track array field names detected from DeepDiff paths or serialized entries."""
-        for name in _extract_array_field_names(path_entry):
-            if name and name not in array_changes:
-                array_changes[name] = True
-
-    def _extract_array_field_names(path_entry: Any) -> List[str]:
-        """Return the relevant top-level field names for array changes."""
-        names: List[str] = []
-
-        try:
-            path_str = str(path_entry)
-        except Exception:
-            path_str = ""
-
-        if path_str:
-            matches = re.findall(r"root\['([^']+)'\]", path_str)
-            for match in matches:
-                if match and match not in names:
-                    names.append(match)
-
-        if not names:
-            tokens = _parse_deepdiff_path_tokens(path_entry)
-            if tokens:
-                for token in tokens:
-                    if isinstance(token, str):
-                        if token and token not in names:
-                            names.append(token)
-                        break  # Only need the first field token
-
-        if not names:
-            cleaned = _clean_path(path_entry)
-            if cleaned:
-                base_name = re.split(r"\s*\[", cleaned, 1)[0].strip()
-                if base_name and base_name not in names:
-                    names.append(base_name)
-
-        return names
-
-    # Collect array field names that have changes
-    if 'iterable_item_added' in diff:
-        added_sec = diff.get('iterable_item_added')
-        if isinstance(added_sec, dict):
-            for path in added_sec.keys():
-                _register_array_field(path)
-        elif isinstance(added_sec, str):
-            _register_array_field(added_sec)
-        elif added_sec is not None and hasattr(added_sec, '__iter__'):
-            for item in added_sec:
-                _register_array_field(item)
-
-    if 'iterable_item_removed' in diff:
-        removed_sec = diff.get('iterable_item_removed')
-        if isinstance(removed_sec, dict):
-            for path in removed_sec.keys():
-                _register_array_field(path)
-        elif isinstance(removed_sec, str):
-            _register_array_field(removed_sec)
-        elif removed_sec is not None and hasattr(removed_sec, '__iter__'):
-            for item in removed_sec:
-                _register_array_field(item)
-
-    # Display array changes with simple before/after format
-    if array_changes:
+    if array_field_diffs:
+        logger.debug(
+            "[format_diff_for_display] Array diff fields: %s",
+            {name: {"before": len(payload.get('original', [])), "after": len(payload.get('modified', []))}
+             for name, payload in array_field_diffs.items()}
+        )
         formatted_lines.append("### 📋 **Array Changes**")
-        source_original: Dict[str, Any] = original_data if isinstance(original_data, dict) else {}
-        source_modified: Dict[str, Any] = modified_data if isinstance(modified_data, dict) else {}
-        for field_name in array_changes.keys():
-            # Get before and after values from original and modified data
-            before_value = source_original.get(field_name, [])
-            after_value = source_modified.get(field_name, [])
+        for field_name, payload in array_field_diffs.items():
+            before_value = payload.get("original", [])
+            after_value = payload.get("modified", [])
 
             if _is_object_array(before_value) or _is_object_array(after_value):
                 before_rows = before_value if isinstance(before_value, list) else []
                 after_rows = after_value if isinstance(after_value, list) else []
                 formatted_lines.extend(_format_object_array_change(field_name, before_rows, after_rows))
             else:
-                # Format as simple lists for scalar arrays
-                before_str = ', '.join([str(v) for v in before_value]) if before_value else '(empty)'
-                after_str = ', '.join([str(v) for v in after_value]) if after_value else '(empty)'
-
+                before_str = ', '.join([_format_value(item) for item in before_value]) if before_value else '(empty)'
+                after_str = ', '.join([_format_value(item) for item in after_value]) if after_value else '(empty)'
                 formatted_lines.append(f"**{field_name}:**")
                 formatted_lines.append(f"  - ❌ **Before:** `[{before_str}]`")
                 formatted_lines.append(f"  - ✅ **After:** `[{after_str}]`")
-        formatted_lines.append("")
+                formatted_lines.append("")
 
     if 'type_changes' in diff:
         formatted_lines.append("### 🔀 **Type Changes**")

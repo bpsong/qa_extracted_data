@@ -23,7 +23,7 @@ ui:
   sidebar_state: "expanded"
 
 logging:
-  level: "DEBUG"
+  level: "INFO"
   format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 
 processing:

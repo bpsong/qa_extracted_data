@@ -251,7 +251,9 @@ class TestDiffUtils:
         diff = calculate_diff(original, modified)
 
         markdown = format_diff_for_display(diff, original, modified)
-        assert "line_items[0] → description" in markdown
+        assert "**line_items:**" in markdown
+        assert "Updated Widget" in markdown
+        assert "line_items[0] → description" not in markdown
 
         streamlit_changes = format_diff_for_streamlit(diff)
         fields = [change.get('field') for change in streamlit_changes if 'field' in change]
@@ -469,6 +471,32 @@ class TestDiffUtils:
         # Should detect array changes
         changes = format_diff_for_streamlit(diff)
         assert len(changes) > 0
+
+    def test_format_diff_for_display_object_array_changes(self):
+        """Object array updates should render under Array Changes, not scalar fields."""
+        original = {"items": [{"code": "A", "qty": 1}, {"code": "B", "qty": 1}]}
+        modified = {"items": [{"code": "A", "qty": 2}, {"code": "B", "qty": 1}]}
+
+        diff = calculate_diff(original, modified)
+        formatted = format_diff_for_display(diff, original, modified)
+
+        assert "Array Changes" in formatted
+        assert "**items:**" in formatted
+        assert "qty" in formatted  # table should include the changed column
+        assert "items → 0 → qty" not in formatted
+
+    def test_format_diff_for_display_scalar_array_changes(self):
+        """Scalar array edits should show before/after lists."""
+        original = {"tags": ["a", "b"]}
+        modified = {"tags": ["a", "c", "d"]}
+
+        diff = calculate_diff(original, modified)
+        formatted = format_diff_for_display(diff, original, modified)
+
+        assert "Array Changes" in formatted
+        assert "**tags:**" in formatted
+        assert "`[a, b]`" in formatted
+        assert "`[a, c, d]`" in formatted
 
 
 if __name__ == "__main__":

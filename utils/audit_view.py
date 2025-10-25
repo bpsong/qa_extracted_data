@@ -269,7 +269,7 @@ class AuditView:
                 "📥 Export Data",
                 help="Export audit data to CSV or JSON format",
                 type="secondary",
-                use_container_width=True,
+                width='stretch',
                 key="audit_export_btn"
             ):
                 st.session_state.show_export_dialog = True
@@ -509,7 +509,7 @@ class AuditView:
         def export_dialog():
             if not entries:
                 Notify.warn("⚠️ No data available to export. Apply different filters or process some files first.")
-                if st.button("Close", type="primary", use_container_width=True):
+                if st.button("Close", type="primary", width='stretch'):
                     st.session_state.show_export_dialog = False
                     st.rerun()
                 return
@@ -531,7 +531,7 @@ class AuditView:
                 csv_selected = st.button(
                     "📊 CSV Format\n\nBest for spreadsheet analysis\n(Excel, Google Sheets)",
                     key="csv_format",
-                    use_container_width=True,
+                    width='stretch',
                     help="Export as comma-separated values for use in spreadsheet applications"
                 )
             
@@ -539,7 +539,7 @@ class AuditView:
                 json_selected = st.button(
                     "📋 JSON Format\n\nComplete raw data\n(APIs, data analysis)",
                     key="json_format", 
-                    use_container_width=True,
+                    width='stretch',
                     help="Export as JSON with all available data fields"
                 )
             
@@ -579,7 +579,7 @@ class AuditView:
                                 file_name=filename,
                                 mime=f"text/{export_format}" if export_format == 'csv' else 'application/json',
                                 type="primary",
-                                use_container_width=True,
+                                width='stretch',
                                 help=f"Click to download your {export_format.upper()} file"
                             )
                             
@@ -615,11 +615,11 @@ class AuditView:
             col1, col2 = st.columns([1, 1])
             
             with col1:
-                if st.button("🔄 Reset", help="Reset format selection", use_container_width=True):
+                if st.button("🔄 Reset", help="Reset format selection", width='stretch'):
                     st.rerun()
             
             with col2:
-                if st.button("❌ Close", type="secondary", use_container_width=True):
+                if st.button("❌ Close", type="secondary", width='stretch'):
                     st.session_state.show_export_dialog = False
                     st.rerun()
         

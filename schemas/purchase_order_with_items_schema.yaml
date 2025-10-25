@@ -1,0 +1,65 @@
+title: "Purchase Order with Items Schema"
+description: "Schema for purchase orders with supplier info, project details, and line items array"
+
+fields:
+  "Supplier name":
+    type: string
+    label: "Supplier Name"
+    required: true
+    min_length: 2
+    max_length: 200
+    help: "Name of the supplier or vendor"
+
+  "Purchase Order number":
+    type: string
+    label: "Purchase Order Number"
+    required: true
+    pattern: "^[A-Z0-9-_]+$"
+    min_length: 3
+    max_length: 50
+    help: "Unique purchase order identifier"
+
+  "Invoice Amount":
+    type: number
+    label: "Invoice Amount"
+    required: true
+    min_value: 0
+    max_value: 1000000
+    help: "Total invoice amount in dollars"
+
+  "Project number":
+    type: string
+    label: "Project Number"
+    required: false
+    pattern: "^[A-Z0-9-_]+$"
+    max_length: 30
+    help: "Associated project identifier"
+
+  "Items":
+    type: array
+    label: "Items"
+    required: true
+    help: "List of items in the purchase order"
+    items:
+      type: object
+      properties:
+        "Description":
+          type: string
+          label: "Description"
+          required: true
+          max_length: 200
+          help: "Item description"
+        "Quantity":
+          type: string
+          label: "Quantity"
+          required: true
+          pattern: "^[0-9]+\\s*[A-Z]+\\s*$"
+          help: "Quantity with unit (e.g., '50 PCS')"
+
+  "nanoid":
+    type: string
+    label: "Nano ID"
+    required: true
+    pattern: "^[A-Za-z0-9_-]+$"
+    max_length: 50
+    help: "Unique nano identifier for the record"

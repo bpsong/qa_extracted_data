@@ -7,6 +7,7 @@ import streamlit as st
 from typing import Dict, Any, Optional
 import logging
 import json
+import copy
 
 from .session_manager import SessionManager
 from .file_utils import load_json_file, save_corrected_json, release_file, append_audit_log
@@ -100,10 +101,11 @@ class EditView:
     @staticmethod
     def _filter_to_schema_fields(data: dict, schema_fields: set) -> tuple[dict, dict]:
         """Filter data to schema fields and extract extras."""
-        filtered_data = {k: v for k, v in data.items() if k in schema_fields}
-        extras = {k: v for k, v in data.items() if k not in schema_fields}
+        filtered_data = {k: copy.deepcopy(v) for k, v in data.items() if k in schema_fields}
+        extras = {k: copy.deepcopy(v) for k, v in data.items() if k not in schema_fields}
         return filtered_data, extras
 
+    @staticmethod
     @staticmethod
     def _initialize_edit_data(filename: str) -> bool:
         """Initialize edit data for the current file."""
@@ -177,8 +179,9 @@ class EditView:
                         st.toast(msg, icon="⚠️")
                 
                 # Update session manager with filtered data (do not mutate on-disk JSON)
-                SessionManager.set_original_data(filtered_data)
-                SessionManager.set_form_data(filtered_data.copy())
+                filtered_snapshot = copy.deepcopy(filtered_data)
+                SessionManager.set_original_data(filtered_snapshot)
+                SessionManager.set_form_data(copy.deepcopy(filtered_snapshot))
                 Notify.success(f"Loaded: {filename}")
                 
                 # Step 4: Create model
@@ -274,24 +277,22 @@ class EditView:
             current_file = SessionManager.get_current_file()
             schema = SessionManager.get_schema()
             
-            # Reload original data from JSON file to ensure fresh data
+            # Always calculate diff fresh from file vs widgets
             original_data = load_json_file(current_file) if current_file else None
             
-            # Collect ALL current form values from session state
-            # This ensures we capture all accumulated changes across multiple field edits
+            # Collect current data from widgets
             if schema:
-                form_data = FormGenerator.collect_current_form_data(schema)
-                # Update SessionManager with collected data before diff calculation
-                SessionManager.set_form_data(form_data)
+                from utils.form_data_collector import collect_all_form_data
+                current_data = collect_all_form_data(schema)
             else:
-                form_data = SessionManager.get_form_data()
+                current_data = SessionManager.get_form_data()
             
-            if not original_data or not form_data:
+            if not original_data or not current_data:
                 Notify.info("No data to compare")
                 return
             
-            # Calculate diff with all accumulated changes
-            diff = calculate_diff(original_data, form_data)
+            # Calculate diff
+            diff = calculate_diff(original_data, current_data)
             
             if has_changes(diff):
                 # Show summary metrics
@@ -309,9 +310,7 @@ class EditView:
                     st.metric("Removed", summary['removed'])
                 
                 # Show detailed diff
-                # Get data from SessionManager to ensure we have the latest state
-                # Use the freshly loaded data for consistent display
-                formatted_diff = format_diff_for_display(diff, original_data, form_data)
+                formatted_diff = format_diff_for_display(diff, original_data, current_data)
                 st.markdown(formatted_diff)
                 
                 # Store diff in session for submission
@@ -418,125 +417,17 @@ class EditView:
 
     @staticmethod
     def _handle_reset():
-        """Handle form reset to original data."""
+        """Handle form reset to original data using form_version counter."""
         try:
-            # Initialize schema
-            schema = SessionManager.get_schema()
-            if not schema:
-                Notify.warn("Schema required to reset form")
-                return 
-
-            current_file = SessionManager.get_current_file()
+            # Increment form version to force complete re-render
+            # This forces Streamlit to treat all widgets as new, re-initializing from original data
+            st.session_state['form_version'] = st.session_state.get('form_version', 0) + 1
             
-            # Reload original data from JSON file to ensure fresh data
-            original_data = load_json_file(current_file) if current_file else None
+            # Clear validation errors
+            SessionManager.clear_validation_errors()
             
-            if original_data:
-                # First update the session manager state
-                SessionManager.set_original_data(original_data)
-                SessionManager.set_form_data(original_data.copy())
-                SessionManager.clear_validation_errors()
-                
-                # Clear all existing field_ prefixed keys from session state
-                for key in list(st.session_state.keys()):
-                    if str(key).startswith('field_'):
-                        del st.session_state[key]
-                
-                # For array fields, also clear array_ and json_array_ prefixed keys
-                for key in list(st.session_state.keys()):
-                    if str(key).startswith('array_') or str(key).startswith('json_array_'):
-                        del st.session_state[key]
-                
-                # Clear all array editor widget keys (comprehensive clearing)
-                # This includes: scalar_array_*, data_editor_*, delete_row_*, add_row_*
-                # and individual item keys like scalar_array_{field_name}_item_{index}
-                keys_to_clear = []
-                for key in st.session_state.keys():
-                    key_str = str(key)
-                    if (key_str.startswith('scalar_array_') or 
-                        key_str.startswith('data_editor_') or 
-                        key_str.startswith('delete_row_') or
-                        key_str.startswith('add_row_')):
-                        keys_to_clear.append(key)
-                
-                # Clear collected keys
-                for key in keys_to_clear:
-                    del st.session_state[key]
-                
-                # Update widget-level session state keys with original values
-                def update_widget_keys(data, schema, prefix=''):
-                    if isinstance(data, dict):
-                        for key, value in data.items():
-                            widget_key = f"field_{prefix}{key}" if prefix else f"field_{key}"
-                            try:
-                                # Get field type from schema
-                                field_type = schema.get('fields', {}).get(key, {}).get('type', 'string')
-                                
-                                if isinstance(value, (dict, list)):
-                                    # For complex types, store them as is
-                                    st.session_state[widget_key] = value
-                                    # Recursively handle nested dictionaries
-                                    if isinstance(value, dict):
-                                        update_widget_keys(value, schema, f"{prefix}{key}.")
-                                else:
-                                    # Special handling for date fields
-                                    if field_type == 'date':
-                                        from datetime import datetime, date
-                                        try:
-                                            if isinstance(value, str):
-                                                from dateutil import parser
-                                                st.session_state[widget_key] = parser.parse(value).date()
-                                            elif isinstance(value, datetime):
-                                                st.session_state[widget_key] = value.date()
-                                            elif isinstance(value, date):
-                                                st.session_state[widget_key] = value
-                                            else:
-                                                st.session_state[widget_key] = value
-                                        except Exception:
-                                            st.session_state[widget_key] = value
-                                    elif field_type == 'datetime':
-                                        from datetime import datetime
-                                        try:
-                                            if isinstance(value, str):
-                                                from dateutil import parser
-                                                st.session_state[widget_key] = parser.parse(value)
-                                            else:
-                                                st.session_state[widget_key] = value
-                                        except Exception:
-                                            st.session_state[widget_key] = value
-                                    else:
-                                        st.session_state[widget_key] = value
-                            except Exception:
-                                st.error(f"Error resetting field {key}")
-                
-                # Update all widget keys with the original data using schema
-                fields_schema = schema.get('fields', {})
-                update_widget_keys(original_data, schema)
-                
-                # Array-specific reset logic: identify and reset array fields
-                for field_name, field_config in fields_schema.items():
-                    if field_config.get('type') == 'array':
-                        original_array = original_data.get(field_name, [])
-                        
-                        # Reset field_{field_name} to original array value
-                        st.session_state[f"field_{field_name}"] = original_array
-                        
-                        # Reset scalar array size widget to original length
-                        st.session_state[f"scalar_array_{field_name}_size"] = len(original_array)
-                        
-                        # For object arrays, reset data_editor state
-                        items_config = field_config.get('items', {})
-                        if items_config.get('type') == 'object':
-                            st.session_state[f"data_editor_{field_name}"] = original_array
-                
-                # Force form data synchronization after all session state updates
-                # This ensures diff calculation sees the reset state immediately
-                SessionManager.set_form_data(original_data.copy())
-                
-                Notify.success("🔄 Form reset to original data")
-                st.rerun()
-            else:
-                Notify.error("No original data available")
+            Notify.success("Reset complete - form will reload from original JSON")
+            st.rerun()
         
         except Exception as e:
             Notify.error("Operation failed")
@@ -571,6 +462,12 @@ class EditView:
                 with st.sidebar.expander("View Errors"):
                     for error in validation_errors:
                         st.sidebar.error(f"• {error}")
+            
+            st.sidebar.checkbox(
+                "Show array debug info",
+                key="show_array_debug",
+                help="Display raw Streamlit data editor session state to aid troubleshooting.",
+            )
             
             # Schema info
             schema = SessionManager.get_schema()

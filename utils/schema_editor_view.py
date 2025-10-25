@@ -294,7 +294,7 @@ class SchemaEditor:
             if st.button("➕ Create New Schema", type="primary",
                         help="Create a new schema from scratch",
                         key="create_new_schema_btn",
-                        use_container_width=True):
+                        width='stretch'):
                 # Clear any existing editor state and switch to edit mode
                 st.session_state.schema_editor_active_file = None
                 st.session_state.schema_editor_fields = []
@@ -319,7 +319,7 @@ class SchemaEditor:
             if st.button("🔄 Refresh",
                         help="Reload schema file list from disk",
                         key="refresh_schema_list_btn",
-                        use_container_width=True):
+                        width='stretch'):
                 # Clear any cached data and rerun to refresh the list
                 st.rerun()
         
@@ -422,7 +422,7 @@ class SchemaEditor:
                                 with button_col1:
                                     if st.button("✏️", key=f"edit_{i}",
                                                 help="Edit this schema",
-                                                use_container_width=True):
+                                                width='stretch'):
                                         st.session_state.schema_editor_active_file = file_info['path']
                                         st.session_state.schema_editor_initialized = False
                                         st.session_state.schema_editor_mode = 'edit'
@@ -431,14 +431,14 @@ class SchemaEditor:
                                 with button_col2:
                                     if st.button("📋", key=f"duplicate_{i}", 
                                                 help="Create a copy of this schema",
-                                                use_container_width=True):
+                                                width='stretch'):
                                         st.session_state.schema_editor_pending_duplicate = file_info['path']
                                         st.rerun()
                                 
                                 with button_col3:
                                     if st.button("🗑️", key=f"delete_{i}",
                                                 help="Delete this schema",
-                                                use_container_width=True):
+                                                width='stretch'):
                                         st.session_state.schema_editor_pending_delete = file_info['path']
                                         st.rerun()
                         
@@ -1069,7 +1069,7 @@ class SchemaEditor:
             # Back to list button with enhanced tooltip
             if st.button("← Back to List", key="back_to_list",
                         help="Return to schema list. Will prompt if unsaved changes exist.",
-                        use_container_width=True):
+                        width='stretch'):
                 SchemaEditor._handle_back_to_list()
         
         # Enhanced save and export buttons with better layout
@@ -1082,19 +1082,19 @@ class SchemaEditor:
             if st.button("💾 Save", type="primary", key="save_schema",
                         disabled=not can_save,
                         help=save_tooltip,
-                        use_container_width=True):
+                        width='stretch'):
                 SchemaEditor._save_current_schema()
         
         with col2:
             if st.button("💾 Save As...", key="save_as_schema",
                         help="Save schema with a new name",
-                        use_container_width=True):
+                        width='stretch'):
                 SchemaEditor._show_save_as_dialog()
         
         with col3:
             if st.button("📤 Export", key="export_schema",
                         help="Download schema as YAML file",
-                        use_container_width=True):
+                        width='stretch'):
                 SchemaEditor._export_current_schema()
         
         with col4:
@@ -1194,7 +1194,7 @@ class SchemaEditor:
         with col1:
             if st.button("➕ Add Field", type="primary", key="add_field_btn",
                         help="Add a new field to the schema",
-                        use_container_width=True):
+                        width='stretch'):
                 SchemaEditor._add_new_field()
         
         with col2:
@@ -1205,7 +1205,7 @@ class SchemaEditor:
         with col3:
             if st.button("🔍 Validate", key="validate_schema_btn",
                         help="Run comprehensive validation",
-                        use_container_width=True):
+                        width='stretch'):
                 SchemaEditor._validate_current_schema()
                 SchemaEditor._show_detailed_validation_feedback()
         
@@ -1213,17 +1213,17 @@ class SchemaEditor:
             # Field management options
             with st.popover("⚙️ Field Options", help="Field management tools"):
                 if st.button("📋 Add Multiple Fields", key="add_multiple",
-                           use_container_width=True):
+                           width='stretch'):
                     st.session_state.schema_editor_show_bulk_add = True
                     st.rerun()
                 
                 if st.button("🔄 Reorder Fields", key="reorder_fields",
-                           use_container_width=True):
+                           width='stretch'):
                     st.session_state.schema_editor_show_reorder = True
                     st.rerun()
                 
                 if st.button("📊 Field Statistics", key="field_stats",
-                           use_container_width=True):
+                           width='stretch'):
                     SchemaEditor._show_field_statistics()
         
         # Display fields with enhanced organization
@@ -1344,26 +1344,26 @@ class SchemaEditor:
                 if st.button("🔼", key=f"move_up_{field_id}",
                            help="Move field up in order",
                            disabled=(index == 0),
-                           use_container_width=True):
+                           width='stretch'):
                     SchemaEditor._move_field_up(index)
             
             with col2:
                 if st.button("🔽", key=f"move_down_{field_id}",
                            help="Move field down in order",
                            disabled=(index == len(st.session_state.schema_editor_fields) - 1),
-                           use_container_width=True):
+                           width='stretch'):
                     SchemaEditor._move_field_down(index)
             
             with col3:
                 if st.button("📋", key=f"duplicate_{field_id}", 
                            help="Duplicate this field",
-                           use_container_width=True):
+                           width='stretch'):
                     SchemaEditor._duplicate_field(index)
             
             with col4:
                 if st.button("🗑️", key=f"delete_{field_id}",
                            help="Delete this field",
-                           use_container_width=True):
+                           width='stretch'):
                     SchemaEditor._delete_field(index)
             
             with col5:

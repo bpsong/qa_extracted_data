@@ -33,18 +33,211 @@ class FormGenerator:
             field_name: Name of the array field
             array_value: Updated array value to synchronize
         """
-        # Update session state with the field key
-        field_key = f"field_{field_name}"
+        # Get form version for versioned keys
+        form_version = st.session_state.get('form_version', 0)
+        
+        # Update session state with the versioned field key
+        field_key = f"field_{field_name}_v{form_version}"
         array_copy = copy.deepcopy(array_value)
         st.session_state[field_key] = array_copy
-        st.session_state[f"scalar_array_{field_name}_size"] = len(array_copy)
+        st.session_state[f"scalar_array_{field_name}_size_v{form_version}"] = len(array_copy)
         
         # Update form data in SessionManager
         current_form_data = SessionManager.get_form_data()
         current_form_data[field_name] = array_copy
         SessionManager.set_form_data(current_form_data)
         
-        logger.debug(f"[_sync_array_to_session] Synchronized {field_name}: {len(array_copy)} items")
+        logger.info(
+            "[SYNC DEBUG] %s -> Synced %d items to field_%s",
+            field_name,
+            len(array_copy),
+            field_name,
+        )
+        if array_copy:
+            logger.info("[SYNC DEBUG] First item: %s", array_copy[0])
+        
+        logger.debug(
+            "[_sync_array_to_session] %s -> %d items; sample=%s",
+            field_name,
+            len(array_copy),
+            array_copy[:2] if array_copy else [],
+        )
+    
+    @staticmethod
+    def _extract_data_editor_records(
+        editor_state: Any,
+        fallback_rows: Optional[List[Dict[str, Any]]] = None,
+        editor_key: Optional[str] = None
+    ) -> Optional[List[Dict[str, Any]]]:
+        """
+        Normalize Streamlit data_editor outputs into a list of dictionaries.
+        
+        Handles:
+        - pandas.DataFrame values returned directly by st.data_editor
+        - Streamlit DataEditorState objects (use `.value`)
+        - Dictionaries with a 'data' payload containing a DataFrame
+        - Pre-existing list[dict] structures
+        """
+        if editor_state is None:
+            return []
+
+        logger.debug(
+            "[_extract_data_editor_records] Inspecting payload type=%s",
+            type(editor_state),
+        )
+
+        # Streamlit >=1.50 returns a DataEditorState with a `.value` attribute.
+        if hasattr(editor_state, "value"):
+            try:
+                editor_state = editor_state.value
+            except Exception:
+                logger.debug("[_extract_data_editor_records] Failed to access DataEditorState.value", exc_info=True)
+
+        if hasattr(editor_state, "to_dict"):
+            try:
+                records = editor_state.to_dict("records")
+            except Exception:
+                logger.debug("[_extract_data_editor_records] Failed to convert editor DataFrame to records", exc_info=True)
+                records = []
+            return FormGenerator._apply_editor_session_diffs(records, editor_key, fallback_rows)
+
+        if isinstance(editor_state, dict):
+            logger.debug(
+                "[_extract_data_editor_records] Dict payload keys=%s edited_rows=%s added_rows=%s deleted_rows=%s",
+                list(editor_state.keys()),
+                editor_state.get("edited_rows"),
+                editor_state.get("added_rows"),
+                editor_state.get("deleted_rows"),
+            )
+            records: List[Dict[str, Any]] = []
+
+            data_frame = editor_state.get("data")
+            if hasattr(data_frame, "to_dict"):
+                try:
+                    records = data_frame.to_dict("records")
+                except Exception:
+                    logger.debug("[_extract_data_editor_records] Failed to convert editor['data'] to records", exc_info=True)
+            elif isinstance(data_frame, list):
+                records = copy.deepcopy(data_frame)
+            elif isinstance(fallback_rows, list):
+                records = copy.deepcopy(fallback_rows)
+
+            records = FormGenerator._apply_editor_dict_diffs(
+                records,
+                editor_state.get("edited_rows") or {},
+                editor_state.get("added_rows") or [],
+                editor_state.get("deleted_rows") or []
+            )
+
+            return FormGenerator._apply_editor_session_diffs(records, editor_key, fallback_rows)
+
+        if isinstance(editor_state, list):
+            return FormGenerator._apply_editor_session_diffs(editor_state, editor_key, fallback_rows)
+
+        logger.debug("[_extract_data_editor_records] Unsupported editor payload type: %s", type(editor_state))
+        return None
+    
+    @staticmethod
+    def _display_data_editor_debug(field_name: str, editor_state: Any) -> None:
+        """Render session state details for the Streamlit data editor when debugging is enabled."""
+        if not st.session_state.get("show_array_debug"):
+            return
+
+        try:
+            container = st.sidebar.expander(f"Array Debug · {field_name}", expanded=True)
+        except Exception:
+            return
+
+        with container:
+            container.markdown(f"**State Type:** `{type(editor_state).__name__}`")
+            container.markdown(f"**State Repr:** `{editor_state}`")
+
+            related_keys = {
+                key: st.session_state.get(key)
+                for key in st.session_state.keys()
+                if key.startswith(f"data_editor_{field_name}")
+            }
+            container.markdown("**Related session_state keys:**")
+
+            def _safe_value(value: Any) -> Any:
+                if hasattr(value, "to_dict"):
+                    try:
+                        return value.to_dict()
+                    except Exception:
+                        return repr(value)
+                if isinstance(value, (list, dict, str, int, float, bool)) or value is None:
+                    return value
+                return repr(value)
+
+            safe_related = {key: _safe_value(val) for key, val in related_keys.items()}
+            container.json(safe_related)
+
+    @staticmethod
+    def _apply_editor_dict_diffs(
+        records: List[Dict[str, Any]],
+        edited_rows: Dict[str, Dict[str, Any]],
+        added_rows: List[Dict[str, Any]],
+        deleted_rows: List[Any],
+    ) -> List[Dict[str, Any]]:
+        """Apply diff dictionaries provided by Streamlit data_editor state."""
+        working = copy.deepcopy(records)
+
+        for row_key, updates in (edited_rows or {}).items():
+            try:
+                idx = int(row_key)
+            except (TypeError, ValueError):
+                logger.debug("[_apply_editor_dict_diffs] Non-numeric row key %s", row_key)
+                continue
+
+            while idx >= len(working):
+                working.append({})
+            working[idx].update(updates or {})
+
+        for row in added_rows or []:
+            working.append(dict(row))
+
+        for row_key in sorted(
+            deleted_rows or [],
+            key=lambda x: int(x) if isinstance(x, (int, str)) and str(x).isdigit() else -1,
+            reverse=True,
+        ):
+            try:
+                idx = int(row_key)
+            except (TypeError, ValueError):
+                logger.debug("[_apply_editor_dict_diffs] Non-numeric delete key %s", row_key)
+                continue
+            if 0 <= idx < len(working):
+                working.pop(idx)
+
+        return working
+
+    @staticmethod
+    def _apply_editor_session_diffs(
+        records: Optional[List[Dict[str, Any]]],
+        editor_key: Optional[str],
+        fallback_rows: Optional[List[Dict[str, Any]]] = None
+    ) -> List[Dict[str, Any]]:
+        """Merge Streamlit's __edited_rows/__added_rows/__deleted_rows session keys into records."""
+        base = copy.deepcopy(records) if records is not None else []
+        if not base and isinstance(fallback_rows, list):
+            base = copy.deepcopy(fallback_rows)
+
+        if not editor_key:
+            return base
+
+        edited_rows = st.session_state.get(f"{editor_key}__edited_rows") or {}
+        added_rows = st.session_state.get(f"{editor_key}__added_rows") or []
+        deleted_rows = st.session_state.get(f"{editor_key}__deleted_rows") or []
+
+        logger.debug(
+            "[_apply_editor_session_diffs] editor=%s edited=%s added=%s deleted=%s",
+            editor_key,
+            edited_rows,
+            added_rows,
+            deleted_rows,
+        )
+
+        return FormGenerator._apply_editor_dict_diffs(base, edited_rows, added_rows, deleted_rows)
     
     @staticmethod
     def _collect_array_data_from_widgets(schema: Dict[str, Any], form_data: Dict[str, Any]) -> Dict[str, Any]:
@@ -64,12 +257,66 @@ class FormGenerator:
         """
         fields = schema.get('fields', {})
         
+        logger.info("[DEBUG _collect_array_data_from_widgets] === COLLECTING ARRAY DATA ===")
+        
         for field_name, field_config in fields.items():
             field_type = field_config.get('type', 'string')
             
             if field_type == 'array':
                 items_config = field_config.get('items', {})
                 item_type = items_config.get('type', 'string')
+                properties = items_config.get('properties', {})
+
+                logger.info(f"[DEBUG _collect_array_data_from_widgets] Processing array field: {field_name}, item_type: {item_type}")
+
+                if item_type == 'object':
+                    # CRITICAL FIX: Prioritize field_{field_name} which is synced during rendering
+                    field_key = f"field_{field_name}"
+                    if field_key in st.session_state and isinstance(st.session_state[field_key], list):
+                        value = st.session_state[field_key]
+                        cleaned_records = FormGenerator._clean_object_array(value, properties)
+                        logger.info(f"[DEBUG _collect_array_data_from_widgets] Using field_{field_name} (synced): {len(cleaned_records)} rows")
+                        if cleaned_records:
+                            logger.info(f"[DEBUG _collect_array_data_from_widgets] First record from field_{field_name}: {cleaned_records[0]}")
+                        form_data[field_name] = cleaned_records
+                        FormGenerator._sync_array_to_session(field_name, cleaned_records)
+                        continue
+                    
+                    # Fallback to data_editor key
+                    data_editor_key = f"data_editor_{field_name}"
+                    logger.info(f"[DEBUG _collect_array_data_from_widgets] field_{field_name} not found, trying data_editor key: {data_editor_key}")
+                    logger.info(f"[DEBUG _collect_array_data_from_widgets] Key exists in session_state: {data_editor_key in st.session_state}")
+                    
+                    if data_editor_key in st.session_state:
+                        editor_state = st.session_state.get(data_editor_key)
+                        logger.info(f"[DEBUG _collect_array_data_from_widgets] Editor state type: {type(editor_state)}")
+                        logger.debug(
+                            "[_collect_array_data_from_widgets] raw editor state for %s: type=%s repr=%r attrs=%s",
+                            field_name,
+                            type(editor_state),
+                            editor_state,
+                            [attr for attr in dir(editor_state) if not attr.startswith('_')],
+                        )
+                        FormGenerator._display_data_editor_debug(field_name, editor_state)
+                        records = FormGenerator._extract_data_editor_records(
+                            editor_state,
+                            fallback_rows=form_data.get(field_name) if isinstance(form_data.get(field_name), list) else None,
+                            editor_key=data_editor_key,
+                        )
+                        logger.info(f"[DEBUG _collect_array_data_from_widgets] Extracted records: {records is not None}, count: {len(records) if records else 0}")
+                        if records is not None:
+                            cleaned_records = FormGenerator._clean_object_array(records, properties)
+                            logger.info(f"[DEBUG _collect_array_data_from_widgets] Cleaned records count: {len(cleaned_records)}")
+                            if cleaned_records:
+                                logger.info(f"[DEBUG _collect_array_data_from_widgets] First cleaned record: {cleaned_records[0]}")
+                            logger.debug(
+                                "[_collect_array_data_from_widgets] Collected %s rows for %s (validate)",
+                                len(cleaned_records),
+                                field_name,
+                            )
+                            form_data[field_name] = cleaned_records
+                            FormGenerator._sync_array_to_session(field_name, cleaned_records)
+                            continue
                 
                 # For scalar arrays, collect from individual item widgets
                 if item_type != 'object':
@@ -140,6 +387,9 @@ class FormGenerator:
         """
         Render a dynamic form based on schema and return form data.
         
+        CRITICAL: data_editor widgets are rendered OUTSIDE the form to capture edits.
+        Only buttons are inside the form.
+        
         Args:
             schema: Schema definition
             current_data: Current form data
@@ -153,28 +403,37 @@ class FormGenerator:
             st.error("Invalid schema provided")
             return current_data
         
-        # Create form
+        # Render fields OUTSIDE form (so data_editor can capture changes)
+        fields = schema['fields']
+        form_data = FormGenerator._render_form_fields(fields, current_data)
+        
+        # Create form with ONLY buttons
         with st.form("json_edit_form", clear_on_submit=False):
-            fields = schema['fields']
-            form_data = FormGenerator._render_form_fields(fields, current_data)
             
             # Get model class for validation
             model_class = SessionManager.get_model_class()
             
-            # Form submission buttons
+            # Form submission buttons (ONLY buttons in form)
+            st.markdown("---")
             col_buttons = st.columns(2)
             
             with col_buttons[0]:
-                validate_submitted = st.form_submit_button("Validate Data")
+                validate_submitted = st.form_submit_button("🔍 Validate Data", use_container_width=True)
             
             with col_buttons[1]:
-                submit_submitted = st.form_submit_button("Submit Changes", type="primary")
+                submit_submitted = st.form_submit_button("✅ Submit Changes", type="primary", use_container_width=True)
             
             # Handle validation button
             if validate_submitted:
-                # CRITICAL: Collect array data from individual item widgets AFTER form submission
-                # Inside forms, widget values are only available in session_state after submission
-                form_data = FormGenerator._collect_array_data_from_widgets(schema, form_data)
+                # DEBUG: Check what's in data_editor session state AFTER form submission
+                for key in st.session_state.keys():
+                    if 'data_editor' in str(key) or 'Items' in str(key):
+                        value = st.session_state[key]
+                        logger.info(f"[DEBUG VALIDATE] {key}: type={type(value)}, value={value if not isinstance(value, (list, dict)) or len(str(value)) < 200 else f'{type(value)} with {len(value)} items'}")
+                
+                # SIMPLIFIED: Collect ALL form data from widgets
+                from utils.form_data_collector import collect_all_form_data
+                form_data = collect_all_form_data(schema)
                 
                 # Always save the form data first
                 SessionManager.set_form_data(form_data)
@@ -199,8 +458,9 @@ class FormGenerator:
             
             # Handle submit button
             if submit_submitted:
-                # CRITICAL: Collect array data from individual item widgets AFTER form submission
-                form_data = FormGenerator._collect_array_data_from_widgets(schema, form_data)
+                # SIMPLIFIED: Collect ALL form data from widgets
+                from utils.form_data_collector import collect_all_form_data
+                form_data = collect_all_form_data(schema)
                 
                 # Save form data
                 SessionManager.set_form_data(form_data)
@@ -278,11 +538,12 @@ class FormGenerator:
     @staticmethod
     def collect_current_form_data(schema: Dict[str, Any]) -> Dict[str, Any]:
         """
-        Collect current form values from session state without rendering the UI.
+        Collect current form values from ALL widgets in session state.
         
-        This method extracts all current widget values from session state, including
-        proper handling of array fields (both scalar and object arrays) and edge cases
-        like empty arrays and missing keys.
+        SIMPLIFIED APPROACH:
+        - For ALL fields: Read from field_{field_name} in session_state
+        - This key is set by widgets during rendering and synced by _sync_array_to_session
+        - No complex extraction logic needed - just read the values directly
         
         Args:
             schema: Schema definition containing field configurations
@@ -293,6 +554,8 @@ class FormGenerator:
         form_data = {}
         fields = schema.get('fields', {})
         
+        logger.info("[DEBUG collect_current_form_data] === COLLECTING FORM DATA (SIMPLIFIED) ===")
+        
         for field_name, field_config in fields.items():
             field_type = field_config.get('type', 'string')
             field_key = f"field_{field_name}"
@@ -302,37 +565,106 @@ class FormGenerator:
                 items_config = field_config.get('items', {})
                 item_type = items_config.get('type', 'string')
                 properties = items_config.get("properties", {})
-                
-                # For object arrays, check data_editor key first
+
+                logger.info(f"[DEBUG collect_current_form_data] Processing array field: {field_name}, item_type: {item_type}")
+
+                # CRITICAL FIX: For object arrays, prioritize field_{field_name} which is synced during rendering
+                # The data_editor session state dict has empty edited_rows when read outside rendering context
                 if item_type == 'object':
-                    data_editor_key = f"data_editor_{field_name}"
-                    if data_editor_key in st.session_state:
-                        value = st.session_state[data_editor_key]
-                        # Handle pandas DataFrame from data_editor
-                        if hasattr(value, 'to_dict'):
-                            # Convert DataFrame to list of dicts
-                            records = value.to_dict('records')
-                        elif isinstance(value, list):
-                            records = value
-                        else:
-                            # Fallback to empty array if value is unexpected type
-                            records = []
-                        form_data[field_name] = FormGenerator._clean_object_array(records, properties)
+                    # First try field_{field_name} which gets synced by _sync_array_to_session during rendering
+                    if field_key in st.session_state and isinstance(st.session_state[field_key], list):
+                        value = st.session_state[field_key]
+                        cleaned = FormGenerator._clean_object_array(value, properties)
+                        logger.info(
+                            f"[DEBUG collect_current_form_data] Using field_{field_name} (synced during render): {len(cleaned)} rows"
+                        )
+                        if cleaned:
+                            logger.info(f"[DEBUG collect_current_form_data] First item from field_{field_name}: {cleaned[0]}")
+                        form_data[field_name] = cleaned
                         continue
-                
-                # For scalar arrays, use field_{field_name} key
+                    
+                    # Fallback to data_editor key (legacy path)
+                    data_editor_key = f"data_editor_{field_name}"
+                    logger.info(f"[DEBUG collect_current_form_data] field_{field_name} not found, trying data_editor key: {data_editor_key}")
+                    logger.info(f"[DEBUG collect_current_form_data] Key exists: {data_editor_key in st.session_state}")
+                    
+                    # DEBUG: Check for the actual DataFrame value that data_editor returns
+                    logger.info(f"[DEBUG collect_current_form_data] All session keys with '{field_name}': {[k for k in st.session_state.keys() if field_name in str(k)]}")
+                    
+                    if data_editor_key in st.session_state:
+                        editor_state = st.session_state.get(data_editor_key)
+                        logger.info(f"[DEBUG collect_current_form_data] Editor state type: {type(editor_state)}")
+                        
+                        # Check if it's a DataFrame directly
+                        if hasattr(editor_state, 'to_dict'):
+                            logger.info(f"[DEBUG collect_current_form_data] Editor state is a DataFrame with shape: {editor_state.shape if hasattr(editor_state, 'shape') else 'unknown'}")
+                            try:
+                                df_dict = editor_state.to_dict('records')
+                                logger.info(f"[DEBUG collect_current_form_data] DataFrame records count: {len(df_dict)}")
+                                if df_dict:
+                                    logger.info(f"[DEBUG collect_current_form_data] First DataFrame record: {df_dict[0]}")
+                            except Exception as e:
+                                logger.error(f"[DEBUG collect_current_form_data] Error converting DataFrame: {e}")
+                        
+                        logger.debug(
+                            "[collect_current_form_data] raw editor state for %s: type=%s repr=%r attrs=%s",
+                            field_name,
+                            type(editor_state),
+                            editor_state,
+                            [attr for attr in dir(editor_state) if not attr.startswith('_')],
+                        )
+                        FormGenerator._display_data_editor_debug(field_name, editor_state)
+                        records = FormGenerator._extract_data_editor_records(
+                            editor_state,
+                            fallback_rows=st.session_state.get(field_key) if isinstance(st.session_state.get(field_key), list) else None,
+                            editor_key=data_editor_key,
+                        )
+                        logger.info(f"[DEBUG collect_current_form_data] Extracted records: {records is not None}, count: {len(records) if records else 0}")
+                        if records is not None:
+                            cleaned_records = FormGenerator._clean_object_array(records, properties)
+                            logger.info(f"[DEBUG collect_current_form_data] Cleaned records count: {len(cleaned_records)}")
+                            if cleaned_records:
+                                logger.info(f"[DEBUG collect_current_form_data] First cleaned record: {cleaned_records[0]}")
+                            logger.debug(
+                                "[collect_current_form_data] Using data_editor state for %s (%d rows)",
+                                field_name,
+                                len(cleaned_records),
+                            )
+                            form_data[field_name] = cleaned_records
+                            continue
+
+                if field_key in st.session_state and isinstance(st.session_state[field_key], list):
+                    value = st.session_state[field_key]
+                    cleaned = (
+                        FormGenerator._clean_object_array(value, properties)
+                        if item_type == 'object'
+                        else value
+                    )
+                    logger.info(
+                        f"[DEBUG collect_current_form_data] Using field_{field_name} directly (len={len(cleaned)})"
+                    )
+                    if cleaned:
+                        logger.info(f"[DEBUG collect_current_form_data] First item from field_{field_name}: {cleaned[0]}")
+                    logger.debug(
+                        "[collect_current_form_data] Using field_%s (len=%d)",
+                        field_name,
+                        len(cleaned),
+                    )
+                    form_data[field_name] = cleaned
+                    continue
+
+                # For scalar arrays or unexpected types, use field_{field_name} when possible
                 if field_key in st.session_state:
                     value = st.session_state[field_key]
-                    # Handle empty arrays and None values
                     if value is None:
                         form_data[field_name] = []
                     elif isinstance(value, list):
-                        if item_type == 'object':
-                            form_data[field_name] = FormGenerator._clean_object_array(value, properties)
-                        else:
-                            form_data[field_name] = value
+                        form_data[field_name] = (
+                            FormGenerator._clean_object_array(value, properties)
+                            if item_type == 'object'
+                            else value
+                        )
                     else:
-                        # Single value - wrap in array
                         form_data[field_name] = [value]
                     continue
                 
@@ -438,7 +770,10 @@ class FormGenerator:
         """Render a single form field based on its configuration."""
         try:
             field_type = field_config.get('type', 'string')
-            widget_key = f"field_{field_name}"
+            
+            # Get form version for reset functionality
+            form_version = st.session_state.get('form_version', 0)
+            widget_key = f"field_{field_name}_v{form_version}"
             
             # Initialize widget kwargs
             widget_kwargs = {
@@ -780,54 +1115,127 @@ class FormGenerator:
     @staticmethod
     def _render_scalar_array_editor(field_name: str, field_config: Dict[str, Any], current_value: List[Any]) -> List[Any]:
         """
-        Streamlined scalar array editor using Streamlit's data_editor for in-table editing.
+        Render array of scalars with individual input fields and delete icons.
+        Uses the Option A pattern: individual fields with delete buttons.
         """
-        import pandas as pd
-
+        # Get form version for reset functionality
+        form_version = st.session_state.get('form_version', 0)
+        array_key = f'array_{field_name}_v{form_version}'
+        
         items_config = field_config.get("items", {})
         item_type = items_config.get("type", "string")
-
-        current_list = list(current_value or [])
-
-        display_values = [
-            FormGenerator._prepare_scalar_value_for_editor(item_type, value, items_config)
-            for value in current_list
-        ]
-
-        column_config = {
-            "value": FormGenerator._build_scalar_column_config(field_name, field_config, item_type, items_config)
-        }
-
-        data_source = pd.DataFrame({"value": display_values})
-        if data_source.empty:
-            data_source = pd.DataFrame({"value": pd.Series(dtype="object")})
-
-        st.caption(
-            "Edit values directly in the table. Use the '+' icon to add rows and the row menu to delete entries."
-        )
-
-        edited_df = st.data_editor(
-            data_source,
-            column_config=column_config,
-            num_rows="dynamic",
-            use_container_width=True,
-            hide_index=True,
-            key=f"scalar_data_editor_{field_name}",
-        )
-
-        raw_values = edited_df["value"].tolist() if "value" in edited_df else []
-
-        updated_values: List[Any] = []
-        for raw_value in raw_values:
-            try:
-                if pd.isna(raw_value):
-                    continue
-            except Exception:
-                pass
-            updated_values.append(FormGenerator._coerce_scalar_value(item_type, raw_value, items_config))
-
+        
+        # Initialize if needed
+        if array_key not in st.session_state:
+            st.session_state[array_key] = list(current_value or [])
+        
+        # Display field label
+        label = field_config.get('label', field_name)
+        help_text = field_config.get('help', '')
+        st.markdown(f"**{label}**")
+        if help_text:
+            st.caption(help_text)
+        
+        # Display current items
+        items = st.session_state[array_key]
+        
+        # Render each item with its own input field and delete button
+        for i, item in enumerate(items):
+            col1, col2 = st.columns([5, 1])
+            with col1:
+                item_key = f'{array_key}_item_{i}'
+                if item_key not in st.session_state:
+                    st.session_state[item_key] = item
+                
+                # Use appropriate widget based on item type
+                if item_type == "number":
+                    st.number_input(
+                        f"Item {i+1}",
+                        key=item_key,
+                        label_visibility="collapsed",
+                        format="%.2f"
+                    )
+                elif item_type == "integer":
+                    st.number_input(
+                        f"Item {i+1}",
+                        key=item_key,
+                        label_visibility="collapsed",
+                        step=1
+                    )
+                else:  # string or other types
+                    st.text_input(
+                        f"Item {i+1}",
+                        key=item_key,
+                        label_visibility="collapsed"
+                    )
+            
+            with col2:
+                if st.button("🗑️", key=f'delete_{array_key}_{i}'):
+                    # Delete this item and reindex remaining items
+                    
+                    # First, collect current values from all existing keys
+                    current_values = []
+                    for j in range(len(items)):
+                        key_j = f'{array_key}_item_{j}'
+                        if key_j in st.session_state:
+                            current_values.append(st.session_state[key_j])
+                        else:
+                            current_values.append(items[j] if j < len(items) else "")
+                    
+                    # Remove the item at position i
+                    current_values.pop(i)
+                    items.pop(i)
+                    
+                    # Clear all existing item keys
+                    keys_to_delete = []
+                    for key in st.session_state.keys():
+                        if str(key).startswith(f'{array_key}_item_'):
+                            keys_to_delete.append(key)
+                    for key in keys_to_delete:
+                        del st.session_state[key]
+                    
+                    # Reindex remaining items with new keys
+                    for j, value in enumerate(current_values):
+                        new_key = f'{array_key}_item_{j}'
+                        st.session_state[new_key] = value
+                    
+                    st.rerun()
+        
+        # Add button
+        if st.button(f"➕ Add Item", key=f'add_{array_key}'):
+            # Add default value based on type
+            if item_type == "number":
+                default_value = 0.0
+            elif item_type == "integer":
+                default_value = 0
+            else:
+                default_value = ""
+            items.append(default_value)
+            st.rerun()
+        
+        # Collect current values from individual item keys for validation and sync
+        updated_values = []
+        for i in range(len(items)):
+            item_key = f'{array_key}_item_{i}'
+            if item_key in st.session_state:
+                value = st.session_state[item_key]
+                # Coerce to correct type
+                try:
+                    if item_type == "number":
+                        value = float(value) if value is not None else 0.0
+                    elif item_type == "integer":
+                        value = int(value) if value is not None else 0
+                    else:
+                        value = str(value) if value is not None else ""
+                    updated_values.append(value)
+                except (ValueError, TypeError):
+                    # Keep original value if coercion fails
+                    updated_values.append(items[i] if i < len(items) else "")
+        
+        # Sync to session state for data collection
         FormGenerator._sync_array_to_session(field_name, updated_values)
-
+        
+        # Validation
         validation_errors = FormGenerator._validate_scalar_array(field_name, updated_values, items_config)
         if validation_errors:
             for error in validation_errors:
@@ -1033,6 +1441,9 @@ class FormGenerator:
         """
         import pandas as pd
         
+        # Get form version for reset functionality
+        form_version = st.session_state.get('form_version', 0)
+        
         items_config = field_config.get("items", {})
         properties = items_config.get("properties", {})
         
@@ -1058,23 +1469,102 @@ class FormGenerator:
 
         column_config = FormGenerator._generate_column_config(properties)
         
+        # Initialize versioned array in session state if needed
+        array_key = f'array_{field_name}_v{form_version}'
+        if array_key not in st.session_state:
+            st.session_state[array_key] = working_array.copy()
+        
+        # Get current items from session state
+        current_items = st.session_state[array_key]
+        
+        # Default row for adding new items
+        default_row = {}
+        for prop_name, prop_config in properties.items():
+            prop_type = prop_config.get('type', 'string')
+            if prop_type == 'string':
+                default_row[prop_name] = "New Item"
+            elif prop_type in ['number', 'integer']:
+                default_row[prop_name] = 1
+            elif prop_type == 'boolean':
+                default_row[prop_name] = False
+            else:
+                default_row[prop_name] = None
+
         with st.container():
-            st.markdown(f"**{field_config.get('label', field_name)}**")
-            st.caption("Edit cells directly. Use the '+' menu to add rows and the row menu to delete entries.")
+            label = field_config.get('label', field_name)
+            help_text = field_config.get('help', '')
+            st.markdown(f"**{label}**")
+            if help_text:
+                st.caption(help_text)
+            
+            # Add/Delete buttons (manual control)
+            col1, col2 = st.columns([1, 1])
+            with col1:
+                if st.button("➕ Add Row", key=f'add_{array_key}'):
+                    st.session_state[array_key].append(default_row.copy())
+                    st.rerun()
+            with col2:
+                if len(current_items) > 0:
+                    if st.button("🗑️ Delete Last Row", key=f'delete_{array_key}'):
+                        st.session_state[array_key].pop()
+                        st.rerun()
+            
+            st.caption("Edit cells directly. Use the buttons above to add/remove rows.")
+
+            # Create DataFrame from current items
+            if current_items:
+                df = pd.DataFrame(current_items)
+                if column_order:
+                    df = df.reindex(columns=column_order)
+            else:
+                df = pd.DataFrame(columns=column_order)
 
             edited_df = st.data_editor(
                 df,
                 column_config=column_config,
-                num_rows="dynamic",
-                use_container_width=True,
-                key=f"data_editor_{field_name}",
+                num_rows="fixed",  # Use manual buttons instead of dynamic
+                width='stretch',
+                key=f"data_editor_{field_name}_v{form_version}",
                 hide_index=True
             )
+            try:
+                first_quantity = edited_df.iloc[0]["Quantity"] if not edited_df.empty else None
+            except Exception:
+                first_quantity = None
+            logger.debug(
+                "[_render_object_array_editor] data_editor df first quantity=%s",
+                first_quantity,
+            )
+            FormGenerator._display_data_editor_debug(field_name, edited_df)
 
-            working_array = FormGenerator._clean_object_array(edited_df.to_dict("records"), properties)
-
-            # Synchronize after data_editor changes (cell edits)
-            FormGenerator._sync_array_to_session(field_name, working_array)
+            # CRITICAL: Store edited DataFrame in a separate key for data collection
+            # This is read during data collection, NOT used to update the source array
+            st.session_state[f'{array_key}_current'] = edited_df
+            
+            # Convert DataFrame to records for validation display
+            if hasattr(edited_df, 'to_dict'):
+                try:
+                    # Convert DataFrame directly to records - this contains the edited values
+                    editor_records = edited_df.to_dict('records')
+                    logger.info(f"[DEBUG _render_object_array_editor] Converted DataFrame: {len(editor_records)} records")
+                    if editor_records:
+                        logger.info(f"[DEBUG _render_object_array_editor] First record: {editor_records[0]}")
+                    
+                    # Clean the records for validation
+                    working_array = FormGenerator._clean_object_array(editor_records, properties)
+                    
+                    logger.info(
+                        "[DEBUG _render_object_array_editor] Cleaned %s: %d rows; first=%s",
+                        field_name,
+                        len(working_array),
+                        working_array[0] if working_array else None,
+                    )
+                except Exception as e:
+                    logger.error(f"[DEBUG _render_object_array_editor] Error converting DataFrame: {e}")
+                    working_array = list(current_items or [])
+            else:
+                logger.warning(f"[DEBUG _render_object_array_editor] edited_df is not a DataFrame: {type(edited_df)}")
+                working_array = list(current_items or [])
 
             validation_errors = FormGenerator._validate_object_array(field_name, working_array, items_config)
             if validation_errors:

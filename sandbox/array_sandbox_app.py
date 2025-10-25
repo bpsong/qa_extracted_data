@@ -346,7 +346,7 @@ def load_test_schemas() -> Dict[str, Dict[str, Any]]:
         ,
         "line_item_constraints_demo": {
             "title": "Line Item Constraint Playground",
-            "description": "Schema focused on testing object property constraints within arrays",
+            "description": "Comprehensive schema testing all field types and constraints in object arrays",
             "fields": {
                 "scenario_name": {
                     "type": "string",
@@ -404,6 +404,14 @@ def load_test_schemas() -> Dict[str, Dict[str, Any]]:
                                 "choices": ["pending", "approved", "backordered", "canceled"],
                                 "default": "pending"
                             },
+                            "priority": {
+                                "type": "enum",
+                                "label": "Priority",
+                                "required": False,
+                                "help": "Order priority level",
+                                "choices": ["low", "medium", "high", "urgent"],
+                                "default": "medium"
+                            },
                             "discount_rate": {
                                 "type": "number",
                                 "label": "Discount %",
@@ -424,6 +432,131 @@ def load_test_schemas() -> Dict[str, Dict[str, Any]]:
                                 "label": "Delivery Date",
                                 "required": False,
                                 "help": "Expected delivery window"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "comprehensive_array_test": {
+            "title": "Comprehensive Array Testing Schema",
+            "description": "Tests all array types: scalar arrays and object arrays with all field types",
+            "fields": {
+                "document_id": {
+                    "type": "string",
+                    "label": "Document ID",
+                    "required": True,
+                    "help": "Unique document identifier"
+                },
+                "tags": {
+                    "type": "array",
+                    "label": "Tags (String Array)",
+                    "required": False,
+                    "help": "Categorization tags",
+                    "items": {
+                        "type": "string",
+                        "min_length": 2,
+                        "max_length": 20
+                    }
+                },
+                "amounts": {
+                    "type": "array",
+                    "label": "Amounts (Number Array)",
+                    "required": False,
+                    "help": "List of monetary amounts",
+                    "items": {
+                        "type": "number",
+                        "min_value": 0,
+                        "max_value": 100000,
+                        "step": 0.01
+                    }
+                },
+                "years": {
+                    "type": "array",
+                    "label": "Years (Integer Array)",
+                    "required": False,
+                    "help": "List of years",
+                    "items": {
+                        "type": "integer",
+                        "min_value": 2020,
+                        "max_value": 2030
+                    }
+                },
+                "flags": {
+                    "type": "array",
+                    "label": "Flags (Boolean Array)",
+                    "required": False,
+                    "help": "List of boolean flags",
+                    "items": {
+                        "type": "boolean"
+                    }
+                },
+                "dates": {
+                    "type": "array",
+                    "label": "Important Dates (Date Array)",
+                    "required": False,
+                    "help": "List of important dates",
+                    "items": {
+                        "type": "date"
+                    }
+                },
+                "items": {
+                    "type": "array",
+                    "label": "Items (Object Array with All Types)",
+                    "required": True,
+                    "help": "Complex objects with all field types including enum",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "name": {
+                                "type": "string",
+                                "label": "Name",
+                                "required": True,
+                                "min_length": 3,
+                                "max_length": 50
+                            },
+                            "code": {
+                                "type": "string",
+                                "label": "Code",
+                                "required": True,
+                                "pattern": r"^[A-Z]{3}-[0-9]{3}$"
+                            },
+                            "price": {
+                                "type": "number",
+                                "label": "Price",
+                                "required": True,
+                                "min_value": 0.01,
+                                "max_value": 10000
+                            },
+                            "count": {
+                                "type": "integer",
+                                "label": "Count",
+                                "required": True,
+                                "min_value": 1,
+                                "max_value": 100
+                            },
+                            "active": {
+                                "type": "boolean",
+                                "label": "Active",
+                                "required": False
+                            },
+                            "category": {
+                                "type": "enum",
+                                "label": "Category",
+                                "required": True,
+                                "choices": ["electronics", "furniture", "supplies", "equipment"],
+                                "default": "supplies"
+                            },
+                            "subcategory": {
+                                "type": "enum",
+                                "label": "Subcategory",
+                                "required": False,
+                                "choices": ["office", "warehouse", "retail", "industrial"]
+                            },
+                            "expiry_date": {
+                                "type": "date",
+                                "label": "Expiry Date",
+                                "required": False
                             }
                         }
                     }
@@ -478,6 +611,7 @@ def load_test_data() -> Dict[str, Dict[str, Any]]:
                     "quantity": 3,
                     "unit_price": 275.50,
                     "status": "approved",
+                    "priority": "high",
                     "discount_rate": 0.15,
                     "in_stock": True,
                     "delivery_date": "2024-03-10"
@@ -488,9 +622,49 @@ def load_test_data() -> Dict[str, Dict[str, Any]]:
                     "quantity": 8,
                     "unit_price": 65.75,
                     "status": "pending",
+                    "priority": "medium",
                     "discount_rate": 0.05,
                     "in_stock": False,
                     "delivery_date": "2024-03-15"
+                }
+            ]
+        },
+        "comprehensive_array_test": {
+            "document_id": "DOC-2024-001",
+            "tags": ["test", "comprehensive", "arrays"],
+            "amounts": [100.50, 250.75, 500.00],
+            "years": [2024, 2025, 2026],
+            "flags": [True, False, True],
+            "dates": ["2024-01-15", "2024-06-30", "2024-12-31"],
+            "items": [
+                {
+                    "name": "Wireless Mouse",
+                    "code": "ELC-001",
+                    "price": 29.99,
+                    "count": 50,
+                    "active": True,
+                    "category": "electronics",
+                    "subcategory": "office",
+                    "expiry_date": "2025-12-31"
+                },
+                {
+                    "name": "Office Desk",
+                    "code": "FUR-002",
+                    "price": 450.00,
+                    "count": 10,
+                    "active": True,
+                    "category": "furniture",
+                    "subcategory": "office"
+                },
+                {
+                    "name": "Printer Paper",
+                    "code": "SUP-003",
+                    "price": 15.99,
+                    "count": 100,
+                    "active": True,
+                    "category": "supplies",
+                    "subcategory": "office",
+                    "expiry_date": "2026-01-01"
                 }
             ]
         }
@@ -507,6 +681,7 @@ def main():
         "Select Test Area",
         [
             "Overview",
+            "Complete Editor Test",
             "Scalar Array Editor", 
             "Object Array Editor",
             "Schema Editor",
@@ -521,6 +696,8 @@ def main():
     
     if page == "Overview":
         render_overview_page()
+    elif page == "Complete Editor Test":
+        render_option_a_test_page()
     elif page == "Scalar Array Editor":
         render_scalar_array_page(test_schemas, test_data)
     elif page == "Object Array Editor":
@@ -665,28 +842,24 @@ def render_overview_page():
 
 
 def render_scalar_array_page(test_schemas: Dict, test_data: Dict):
-    """Render scalar array editor testing page with production-like form semantics."""
+    """Render scalar array editor testing page using Option A architecture."""
     st.header("Scalar Array Editor Testing")
-    st.markdown("Test editing arrays of scalar values with add/remove functionality")
+    st.markdown("Test editing arrays of scalar values with table-style interface")
 
     schema_choice = st.selectbox(
         "Select Test Schema",
-        ["insurance_document"],
+        ["insurance_document", "comprehensive_array_test"],
         format_func=lambda x: test_schemas[x]["title"]
     )
 
     schema = test_schemas[schema_choice]
-    data = copy.deepcopy(test_data[schema_choice])
-
-    state = _get_session_state()
-
-    if f"array_data_{schema_choice}" not in st.session_state:
-        st.session_state[f"array_data_{schema_choice}"] = copy.deepcopy(data)
-
-    current_data = st.session_state[f"array_data_{schema_choice}"]
+    original_data = copy.deepcopy(test_data[schema_choice])
+    
+    # Get form version for reset functionality
+    form_version = st.session_state.get('form_version', 0)
 
     st.subheader("Original Test Data")
-    st.json(data)
+    st.json(original_data)
 
     array_fields = {
         field_name: field_config
@@ -698,47 +871,168 @@ def render_scalar_array_page(test_schemas: Dict, test_data: Dict):
         st.warning("No scalar array fields found in selected schema")
         return
 
-    form_init_key = f"scalar_form_initialized_{schema_choice}"
-    if not state.get(form_init_key):
-        SandboxSessionManager.set_form_data(copy.deepcopy(current_data))
-        state[form_init_key] = True
-    else:
-        form_snapshot = SandboxSessionManager.get_form_data()
-        for field_name in array_fields:
-            if field_name in form_snapshot:
-                current_data[field_name] = form_snapshot[field_name]
-        st.session_state[f"array_data_{schema_choice}"] = current_data
+    st.subheader("Scalar Array Field Editors")
 
-    st.subheader("Array Field Editors")
-
-    updated_values: Dict[str, List[Any]] = {}
-    changes_made = False
+    # Render editors - they manage their own state via versioned keys
     for field_name, field_config in array_fields.items():
         st.markdown(f"### {field_config.get('label', field_name)}")
         st.caption(field_config.get('help', 'No description provided.'))
-        current_array = current_data.get(field_name, [])
-        new_value = render_scalar_array_editor(field_name, field_config, current_array)
-        if new_value != current_array:
-            changes_made = True
-        updated_values[field_name] = new_value
+        
+        # Show constraints
+        items_config = field_config.get('items', {})
+        item_type = items_config.get('type', 'string')
+        constraints = []
+        if items_config.get('min_length'):
+            constraints.append(f"min length: {items_config['min_length']}")
+        if items_config.get('max_length'):
+            constraints.append(f"max length: {items_config['max_length']}")
+        if items_config.get('pattern'):
+            constraints.append(f"pattern: {items_config['pattern']}")
+        if items_config.get('min_value') is not None:
+            constraints.append(f"min: {items_config['min_value']}")
+        if items_config.get('max_value') is not None:
+            constraints.append(f"max: {items_config['max_value']}")
+        if items_config.get('choices'):
+            constraints.append(f"choices: {items_config['choices']}")
+        
+        if constraints:
+            st.markdown(f"**Type:** `{item_type}` | **Constraints:** {', '.join(constraints)}")
+        
+        # Render editor with original data
+        render_scalar_array_editor(field_name, field_config, original_data.get(field_name, []))
 
-    if changes_made:
-        for field_name, value in updated_values.items():
-            current_data[field_name] = value
-        st.session_state[f"array_data_{schema_choice}"] = copy.deepcopy(current_data)
-        SandboxSessionManager.set_form_data(copy.deepcopy(current_data))
+    st.divider()
+    
+    # Collect current data from widgets for display and validation
+    st.subheader("🔍 Current Data & Validation")
+    
+    # Add a refresh button to force data collection
+    if st.button("🔄 Refresh Validation", help="Click after adding/editing values to see updated validation"):
         st.rerun()
+    
+    current_data = collect_scalar_array_data(schema, original_data, array_fields)
+    
+    # Debug: Show what was collected
+    with st.expander("🐛 Debug: Data Collection", expanded=False):
+        form_version = st.session_state.get('form_version', 0)
+        st.write(f"Form version: {form_version}")
+        for field_name in array_fields.keys():
+            array_key = f'scalar_array_{field_name}_v{form_version}'
+            current_key = f'{array_key}_current'
+            st.write(f"Array key: {array_key}")
+            st.write(f"Current key: {current_key}")
+            st.write(f"Array exists: {array_key in st.session_state}")
+            st.write(f"Current exists: {current_key in st.session_state}")
+            if current_key in st.session_state:
+                st.write(f"Current value type: {type(st.session_state[current_key])}")
+                st.write(f"Current value: {st.session_state[current_key]}")
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.markdown("**Current Values:**")
+        st.json(current_data)
+    
+    with col2:
+        st.markdown("**Validation Results:**")
+        all_valid = True
+        for field_name, field_config in array_fields.items():
+            items_config = field_config.get("items", {})
+            field_data = current_data.get(field_name, [])
+            validation_errors = validate_scalar_array(field_name, field_data, items_config)
+            
+            if validation_errors:
+                all_valid = False
+                st.error(f"**{field_name}**: {len(validation_errors)} error(s)")
+                for error in validation_errors[:3]:  # Show first 3 errors
+                    st.error(f"  • {error}")
+                if len(validation_errors) > 3:
+                    st.error(f"  ... and {len(validation_errors) - 3} more")
+            else:
+                st.success(f"**{field_name}**: ✅ Valid ({len(field_data)} items)")
+        
+        if all_valid:
+            st.success("🎉 All fields valid!")
+
+    st.divider()
+    
+    # Calculate and show diff
+    st.subheader("📊 Changes Preview")
+    from deepdiff import DeepDiff
+    diff = DeepDiff(original_data, current_data, ignore_order=False)
+    
+    if diff:
+        changes = diff.get('values_changed', {})
+        added = diff.get('iterable_item_added', {})
+        removed = diff.get('iterable_item_removed', {})
+        
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            st.metric("Modified", len(changes))
+        with col2:
+            st.metric("Added", len(added))
+        with col3:
+            st.metric("Removed", len(removed))
+        
+        if changes:
+            st.markdown("**Modified:**")
+            for path, change in list(changes.items())[:5]:
+                st.write(f"- {path}: `{change['old_value']}` → `{change['new_value']}`")
+        if added:
+            st.markdown("**Added:**")
+            for path, value in list(added.items())[:5]:
+                st.write(f"- {path}: `{value}`")
+        if removed:
+            st.markdown("**Removed:**")
+            for path, value in list(removed.items())[:5]:
+                st.write(f"- {path}: `{value}`")
     else:
-        SandboxSessionManager.set_form_data(copy.deepcopy(current_data))
+        st.success("✅ No changes detected")
 
-    st.subheader("Updated Data")
-    st.json(current_data)
+    st.divider()
+    
+    # Action buttons
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        if st.button("🔄 Reset to Original", use_container_width=True):
+            # Increment form version to force complete re-render
+            st.session_state['form_version'] = st.session_state.get('form_version', 0) + 1
+            st.success("🔄 Reset complete - reloading from original data")
+            st.rerun()
+    
+    with col2:
+        if st.button("💾 Save Changes", use_container_width=True, type="primary"):
+            # In a real app, this would save to file
+            st.success("✅ Changes saved (simulated)")
+            st.balloons()
 
-    if st.button("Reset to Original Data"):
-        SandboxSessionManager.reset()
-        st.session_state[f"array_data_{schema_choice}"] = copy.deepcopy(data)
-        state.pop(form_init_key, None)
-        st.rerun()
+
+def collect_scalar_array_data(schema: Dict, original_data: Dict, array_fields: Dict) -> Dict:
+    """Collect current data from scalar array editors (individual fields pattern)."""
+    current_data = copy.deepcopy(original_data)
+    form_version = st.session_state.get('form_version', 0)
+    
+    for field_name in array_fields.keys():
+        array_key = f'scalar_array_{field_name}_v{form_version}'
+        field_config = array_fields[field_name]
+        items_config = field_config.get('items', {})
+        item_type = items_config.get('type', 'string')
+        
+        if array_key in st.session_state:
+            # Collect from individual item keys
+            items = []
+            for i in range(len(st.session_state[array_key])):
+                item_key = f'{array_key}_item_{i}'
+                if item_key in st.session_state:
+                    value = st.session_state[item_key]
+                    # Convert date to string for JSON serialization
+                    if isinstance(value, date):
+                        value = value.isoformat()
+                    items.append(coerce_scalar_value(item_type, value, items_config))
+            current_data[field_name] = items
+    
+    return current_data
 
 
 def render_schema_editor_page() -> None:
@@ -819,7 +1113,7 @@ def render_validation_page(test_schemas: Dict[str, Dict[str, Any]], test_data: D
 
 
 def render_object_array_page(test_schemas: Dict, test_data: Dict):
-    """Render object array editor testing page with production-like behaviour."""
+    """Render object array editor testing page using Option A architecture."""
     st.header("Object Array Editor Testing")
     st.markdown("Test editing arrays of objects using table-style interface")
 
@@ -843,16 +1137,13 @@ def render_object_array_page(test_schemas: Dict, test_data: Dict):
     )
 
     schema = test_schemas[schema_choice]
-    data = copy.deepcopy(test_data[schema_choice])
-    state = _get_session_state()
-
-    if f"object_array_data_{schema_choice}" not in st.session_state:
-        st.session_state[f"object_array_data_{schema_choice}"] = copy.deepcopy(data)
-
-    current_data = st.session_state[f"object_array_data_{schema_choice}"]
+    original_data = copy.deepcopy(test_data[schema_choice])
+    
+    # Get form version for reset functionality
+    form_version = st.session_state.get('form_version', 0)
 
     st.subheader("Original Test Data")
-    st.json(data)
+    st.json(original_data)
 
     object_array_fields = {
         field_name: field_config
@@ -864,254 +1155,262 @@ def render_object_array_page(test_schemas: Dict, test_data: Dict):
         st.warning("No object array fields found in selected schema")
         return
 
-    form_init_key = f"object_form_initialized_{schema_choice}"
-    if not state.get(form_init_key):
-        SandboxSessionManager.set_form_data(copy.deepcopy(current_data))
-        state[form_init_key] = True
-    else:
-        form_snapshot = SandboxSessionManager.get_form_data()
-        for field_name in object_array_fields:
-            if field_name in form_snapshot:
-                current_data[field_name] = form_snapshot[field_name]
-        st.session_state[f"object_array_data_{schema_choice}"] = current_data
-
     st.subheader("Object Array Field Editors")
 
-    with st.form(f"object_array_form_{schema_choice}", clear_on_submit=False):
-        updated_values: Dict[str, List[Dict[str, Any]]] = {}
+    # Render editors - they manage their own state via versioned keys
+    for field_name, field_config in object_array_fields.items():
+        st.markdown(f"### {field_config.get('label', field_name)}")
+        st.caption(field_config.get('help', 'No description provided.'))
+        properties = field_config.get("items", {}).get("properties", {})
+        
+        # Show constraints
+        constraint_lines = []
+        for prop_name, prop_config in properties.items():
+            hints: List[str] = []
+            if prop_config.get("required"):
+                hints.append("required")
+            if prop_config.get("min_length") is not None:
+                hints.append(f"min length {prop_config['min_length']}")
+            if prop_config.get("max_length") is not None:
+                hints.append(f"max length {prop_config['max_length']}")
+            if prop_config.get("pattern"):
+                hints.append(f"pattern {prop_config['pattern']}")
+            if prop_config.get("min_value") is not None:
+                hints.append(f"min {prop_config['min_value']}")
+            if prop_config.get("max_value") is not None:
+                hints.append(f"max {prop_config['max_value']}")
+            if prop_config.get("step") is not None:
+                hints.append(f"step {prop_config['step']}")
+            if prop_config.get("choices"):
+                rendered_choices = ", ".join(map(str, prop_config["choices"]))
+                hints.append(f"choices [{rendered_choices}]")
+            if hints:
+                constraint_lines.append(f"- `{prop_name}`: {', '.join(hints)}")
+        if constraint_lines:
+            st.markdown("**Constraints to explore:**\n" + "\n".join(constraint_lines))
+        
+        # Render editor with original data
+        render_object_array_editor(field_name, field_config, original_data.get(field_name, []))
+
+    st.divider()
+    
+    # Collect current data from widgets for display and validation
+    st.subheader("🔍 Current Data & Validation")
+    
+    # Add a refresh button to force data collection
+    if st.button("🔄 Refresh Validation", help="Click after adding/editing rows to see updated validation"):
+        st.rerun()
+    
+    current_data = collect_object_array_data(schema, original_data, object_array_fields)
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.markdown("**Current Values:**")
+        st.json(current_data)
+    
+    with col2:
+        st.markdown("**Validation Results:**")
+        all_valid = True
         for field_name, field_config in object_array_fields.items():
-            st.markdown(f"### {field_config.get('label', field_name)}")
-            st.caption(field_config.get('help', 'No description provided.'))
-            properties = field_config.get("items", {}).get("properties", {})
-            constraint_lines = []
-            for prop_name, prop_config in properties.items():
-                hints: List[str] = []
-                if prop_config.get("required"):
-                    hints.append("required")
-                if prop_config.get("min_length") is not None:
-                    hints.append(f"min length {prop_config['min_length']}")
-                if prop_config.get("max_length") is not None:
-                    hints.append(f"max length {prop_config['max_length']}")
-                if prop_config.get("pattern"):
-                    hints.append(f"pattern {prop_config['pattern']}")
-                if prop_config.get("min_value") is not None:
-                    hints.append(f"min {prop_config['min_value']}")
-                if prop_config.get("max_value") is not None:
-                    hints.append(f"max {prop_config['max_value']}")
-                if prop_config.get("step") is not None:
-                    hints.append(f"step {prop_config['step']}")
-                if prop_config.get("choices"):
-                    rendered_choices = ", ".join(map(str, prop_config["choices"]))
-                    hints.append(f"choices [{rendered_choices}]")
-                if hints:
-                    constraint_lines.append(f"- `{prop_name}`: {', '.join(hints)}")
-            if constraint_lines:
-                st.markdown("**Constraints to explore:**\n" + "\n".join(constraint_lines))
-            current_array = current_data.get(field_name, [])
-            updated_values[field_name] = render_object_array_editor(field_name, field_config, current_array)
+            items_config = field_config.get("items", {})
+            field_data = current_data.get(field_name, [])
+            validation_errors = validate_object_array(field_name, field_data, items_config)
+            
+            if validation_errors:
+                all_valid = False
+                st.error(f"**{field_name}**: {len(validation_errors)} error(s)")
+                for error in validation_errors[:3]:  # Show first 3 errors
+                    st.error(f"  • {error}")
+                if len(validation_errors) > 3:
+                    st.error(f"  ... and {len(validation_errors) - 3} more")
+            else:
+                st.success(f"**{field_name}**: ✅ Valid")
+        
+        if all_valid:
+            st.success("🎉 All fields valid!")
 
-        commit = st.form_submit_button("Sync object array changes", type="primary")
+    st.divider()
+    
+    # Calculate and show diff
+    st.subheader("📊 Changes Preview")
+    from deepdiff import DeepDiff
+    diff = DeepDiff(original_data, current_data, ignore_order=False)
+    
+    if diff:
+        changes = diff.get('values_changed', {})
+        added = diff.get('iterable_item_added', {})
+        removed = diff.get('iterable_item_removed', {})
+        
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            st.metric("Modified", len(changes))
+        with col2:
+            st.metric("Added", len(added))
+        with col3:
+            st.metric("Removed", len(removed))
+        
+        if changes:
+            st.markdown("**Modified:**")
+            for path, change in list(changes.items())[:5]:
+                st.write(f"- {path}: `{change['old_value']}` → `{change['new_value']}`")
+        if added:
+            st.markdown("**Added:**")
+            for path in list(added.keys())[:5]:
+                st.write(f"- {path}")
+        if removed:
+            st.markdown("**Removed:**")
+            for path in list(removed.keys())[:5]:
+                st.write(f"- {path}")
+    else:
+        st.success("✅ No changes detected")
 
-    if commit:
-        for field_name, value in updated_values.items():
-            current_data[field_name] = value
-        st.session_state[f"object_array_data_{schema_choice}"] = current_data
-        SandboxSessionManager.set_form_data(copy.deepcopy(current_data))
-        st.success("Object array values synchronized with sandbox state.")
-        st.rerun()
+    st.divider()
+    
+    # Action buttons
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        if st.button("🔄 Reset to Original", use_container_width=True):
+            # Increment form version to force complete re-render
+            st.session_state['form_version'] = st.session_state.get('form_version', 0) + 1
+            st.success("🔄 Reset complete - reloading from original data")
+            st.rerun()
+    
+    with col2:
+        if st.button("💾 Save Changes", use_container_width=True, type="primary"):
+            # In a real app, this would save to file
+            st.success("✅ Changes saved (simulated)")
+            st.balloons()
 
-    st.subheader("Updated Data")
-    st.json(current_data)
 
-    if st.button("Reset to Original Data"):
-        SandboxSessionManager.reset()
-        st.session_state[f"object_array_data_{schema_choice}"] = copy.deepcopy(data)
-        state.pop(form_init_key, None)
-        st.rerun()
-
-def render_scalar_array_editor(field_name: str, field_config: Dict[str, Any], current_value: List[Any]) -> List[Any]:
-    """
-    Table-based editor for scalar arrays powered by Streamlit's data_editor.
-
-    Users can edit values directly in the grid, add new rows with the built-in controls,
-    and delete rows without leaving the table. Values are normalised before being returned.
-    """
+def collect_object_array_data(schema: Dict, original_data: Dict, object_array_fields: Dict) -> Dict:
+    """Collect current data from object array editors (Option A pattern)."""
     import pandas as pd
+    
+    current_data = copy.deepcopy(original_data)
+    form_version = st.session_state.get('form_version', 0)
+    
+    for field_name in object_array_fields.keys():
+        # Read from the stored edited DataFrame
+        array_key = f'array_{field_name}_v{form_version}'
+        current_key = f'{array_key}_current'
+        field_config = object_array_fields[field_name]
+        properties = field_config.get("items", {}).get("properties", {})
+        
+        if current_key in st.session_state:
+            # Use the edited DataFrame stored during rendering
+            edited_df = st.session_state[current_key]
+            current_data[field_name] = clean_object_array(edited_df.to_dict('records'), properties)
+        elif array_key in st.session_state:
+            # Fallback to array state if editor hasn't been rendered yet
+            current_data[field_name] = clean_object_array(st.session_state[array_key], properties)
+    
+    return current_data
 
+def render_scalar_array_editor(field_name: str, field_config: Dict[str, Any], current_value: List[Any]) -> None:
+    """
+    Individual field editor for scalar arrays with delete icons per item.
+    
+    Uses the proven pattern from the Complete Editor Test (tags field).
+    More intuitive UX than table-based editing for scalar values.
+    """
     items_config = field_config.get("items", {})
     item_type = items_config.get("type", "string")
-
-    display_values = [
-        prepare_scalar_value_for_editor(item_type, value, items_config)
-        for value in (current_value or [])
-    ]
-
-    column_config = {
-        "value": build_scalar_column_config(field_name, field_config, item_type, items_config)
-    }
-
-    data_source = pd.DataFrame({"value": display_values})
     
-    if data_source.empty:
-        data_source = pd.DataFrame({"value": pd.Series(dtype="object")})
-
-    st.caption(
-        "Edit values directly in the table below. Use the '+' icon to add rows and the row menu to delete entries."
-    )
-
-    edited_df = st.data_editor(
-        data_source,
-        column_config=column_config,
-        num_rows="dynamic",
-        use_container_width=True,
-        hide_index=True,
-        key=f"scalar_data_editor_{field_name}",
-    )
-
-    raw_values = edited_df["value"].tolist() if "value" in edited_df else []
-
-    updated_values: List[Any] = []
-    for raw_value in raw_values:
-        try:
-            if pd.isna(raw_value):
-                continue
-        except Exception:
-            pass
-        updated_values.append(coerce_scalar_value(item_type, raw_value, items_config))
-
-    SandboxSessionManager.sync_array_field(field_name, updated_values)
-
-    validation_errors = validate_scalar_array(field_name, updated_values, items_config)
-    if validation_errors:
-        for error in validation_errors:
-            st.error(error)
-            logger.debug("[ScalarArrayEditor] %s validation error: %s", field_name, error)
-    elif updated_values:
-        st.success(f"{len(updated_values)} items valid")
-    else:
-        st.info("No items in this array yet.")
-
-    return updated_values
-
-
-def build_scalar_column_config(
-    field_name: str,
-    field_config: Dict[str, Any],
-    item_type: str,
-    items_config: Dict[str, Any],
-) -> Any:
-    """Create a column configuration for scalar array editing based on item type."""
-    label = field_config.get("label", field_name)
-    help_text = field_config.get("help", "")
-    required = field_config.get("required", False)
-
-    range_hint: List[str] = []
-    min_value = items_config.get("min_value")
-    max_value = items_config.get("max_value")
-    if min_value is not None:
-        range_hint.append(f">= {min_value}")
-    if max_value is not None:
-        range_hint.append(f"<= {max_value}")
-
-    if range_hint:
-        separator = " " if help_text else ""
-        help_text = f"{help_text}{separator}(Allowed: {', '.join(range_hint)})"
-
-    if item_type == "string":
-        return st.column_config.TextColumn(
-            label=label,
-            help=help_text,
-            required=required,
-            max_chars=items_config.get("max_length"),
-        )
-    if item_type == "number":
-        return st.column_config.NumberColumn(
-            label=label,
-            help=help_text,
-            required=required,
-            step=items_config.get("step", 0.01),
-            format="%.2f",
-        )
-    if item_type == "integer":
-        return st.column_config.NumberColumn(
-            label=label,
-            help=help_text,
-            required=required,
-            step=1,
-            format="%d",
-        )
-    if item_type == "boolean":
-        return st.column_config.CheckboxColumn(
-            label=label,
-            help=help_text,
-            required=required,
-        )
-    if item_type == "date":
-        return st.column_config.DateColumn(
-            label=label,
-            help=help_text,
-            required=required,
-        )
-    if item_type == "enum":
-        return st.column_config.SelectboxColumn(
-            label=label,
-            help=help_text,
-            required=required,
-            options=items_config.get("choices", []),
-            default=items_config.get("default"),
-        )
-    return st.column_config.TextColumn(
-        label=label,
-        help=help_text,
-        required=required,
-    )
+    # Get form version for reset functionality
+    form_version = st.session_state.get('form_version', 0)
+    array_key = f'scalar_array_{field_name}_v{form_version}'
+    
+    # Initialize array in session state if needed
+    if array_key not in st.session_state:
+        st.session_state[array_key] = list(current_value or [])
+    
+    # Get current items from session state
+    current_items = st.session_state[array_key]
+    
+    # Render each item with its own input field and delete button
+    for i, item in enumerate(current_items):
+        col1, col2 = st.columns([5, 1])
+        with col1:
+            item_key = f'{array_key}_item_{i}'
+            if item_key not in st.session_state:
+                # Convert string dates to date objects for date_input widget
+                if item_type == "date" and isinstance(item, str):
+                    try:
+                        item = datetime.strptime(item, "%Y-%m-%d").date()
+                    except ValueError:
+                        item = date.today()
+                st.session_state[item_key] = item
+            
+            # Render appropriate input widget based on type
+            if item_type == "string":
+                st.text_input(
+                    f"Item {i+1}",
+                    key=item_key,
+                    label_visibility="collapsed",
+                    max_chars=items_config.get("max_length"),
+                    placeholder=f"Enter {field_config.get('label', field_name).lower()}"
+                )
+            elif item_type == "number":
+                st.number_input(
+                    f"Item {i+1}",
+                    key=item_key,
+                    label_visibility="collapsed",
+                    step=items_config.get("step", 0.01),
+                    format="%.2f"
+                )
+            elif item_type == "integer":
+                st.number_input(
+                    f"Item {i+1}",
+                    key=item_key,
+                    label_visibility="collapsed",
+                    step=1,
+                    format="%d"
+                )
+            elif item_type == "boolean":
+                st.checkbox(
+                    f"Item {i+1}",
+                    key=item_key,
+                    label_visibility="collapsed"
+                )
+            elif item_type == "date":
+                st.date_input(
+                    f"Item {i+1}",
+                    key=item_key,
+                    label_visibility="collapsed"
+                )
+            elif item_type == "enum":
+                st.selectbox(
+                    f"Item {i+1}",
+                    options=items_config.get("choices", []),
+                    key=item_key,
+                    label_visibility="collapsed"
+                )
+            else:
+                st.text_input(
+                    f"Item {i+1}",
+                    key=item_key,
+                    label_visibility="collapsed"
+                )
+        
+        with col2:
+            if st.button("🗑️", key=f'delete_{array_key}_{i}', help="Delete this item"):
+                # Delete this item
+                del st.session_state[item_key]
+                current_items.pop(i)
+                st.rerun()
+    
+    # Add button
+    default_value = get_default_value_for_type(item_type, items_config)
+    if st.button(f"➕ Add {field_config.get('label', field_name)}", key=f'add_{array_key}'):
+        current_items.append(default_value)
+        st.rerun()
 
 
-def prepare_scalar_value_for_editor(item_type: str, value: Any, items_config: Dict[str, Any]) -> Any:
-    """Convert stored values into editor-friendly representations."""
-    if value is None:
-        return None
-
-    if item_type == "string":
-        return str(value)
-    if item_type == "number":
-        try:
-            return float(value)
-        except (TypeError, ValueError):
-            logger.debug("Scalar editor: unable to coerce %r to float for display", value)
-            return None
-    if item_type == "integer":
-        try:
-            return int(value)
-        except (TypeError, ValueError):
-            logger.debug("Scalar editor: unable to coerce %r to int for display", value)
-            return None
-    if item_type == "boolean":
-        if isinstance(value, bool):
-            return value
-        if isinstance(value, str):
-            lowered = value.strip().lower()
-            if lowered in {"true", "yes", "1"}:
-                return True
-            if lowered in {"false", "no", "0"}:
-                return False
-        return bool(value)
-    if item_type == "date":
-        if isinstance(value, datetime):
-            return value.date()
-        if isinstance(value, date):
-            return value
-        if isinstance(value, str):
-            try:
-                return datetime.strptime(value, "%Y-%m-%d").date()
-            except ValueError:
-                logger.debug("Scalar editor: unable to parse date string %r", value)
-                return None
-        return None
-    if item_type == "enum":
-        choices = items_config.get("choices", [])
-        return value if not choices or value in choices else items_config.get("default")
-    return value
+# Note: build_scalar_column_config and prepare_scalar_value_for_editor removed
+# These were only needed for the table-based approach
+# Individual fields use native Streamlit widgets which handle type conversion
 
 
 def coerce_scalar_value(item_type: str, raw_value: Any, items_config: Dict[str, Any]) -> Any:
@@ -1302,65 +1601,70 @@ def validate_scalar_item(field_path: str, value: Any, item_type: str, items_conf
 
 
 def render_object_array_editor(field_name: str, field_config: Dict[str, Any], current_value: List[Dict]) -> List[Dict]:
-    """Production-aligned editor for arrays of objects using Streamlit's data_editor."""
-    return _render_object_array_editor(field_name, field_config, current_value)
-
-
-def _render_object_array_editor(field_name: str, field_config: Dict[str, Any], current_value: List[Dict]) -> List[Dict]:
-    """Production-aligned editor for arrays of objects using Streamlit's data_editor."""
+    """
+    Production-aligned editor for arrays of objects using Option A architecture.
+    Uses manual Add/Delete buttons with num_rows="fixed" to avoid feedback loops.
+    """
     import pandas as pd
 
     items_config = field_config.get("items", {})
     properties = items_config.get("properties", {})
-
-    working_array = list(current_value or [])
-    SandboxSessionManager.sync_array_field(field_name, working_array)
-
-    data_editor_columns: List[str] = list(properties.keys())
-    if working_array:
-        for obj in working_array:
-            for key in obj.keys():
-                if key not in data_editor_columns:
-                    data_editor_columns.append(key)
-
-    if working_array:
-        df = pd.DataFrame(working_array)
-        if data_editor_columns:
-            df = df.reindex(columns=data_editor_columns)
-    else:
-        df = pd.DataFrame(columns=data_editor_columns)
-
-    for column_name, prop_config in properties.items():
-        if prop_config.get("type") == "date" and column_name in df.columns:
-            df[column_name] = pd.to_datetime(df[column_name], errors="coerce")
-
-    column_config = generate_column_config(properties)
-
+    
+    # Get form version for reset functionality
+    form_version = st.session_state.get('form_version', 0)
+    array_key = f'array_{field_name}_v{form_version}'
+    
+    # Initialize array in session state if needed
+    if array_key not in st.session_state:
+        st.session_state[array_key] = list(current_value or [])
+    
+    # Get current items from session state
+    current_items = st.session_state[array_key]
+    
+    # Default row for adding new items
+    default_row = create_default_object(properties)
+    
     with st.container():
         st.markdown(f"**{field_config.get('label', field_name)}**")
-        st.caption("Use the built-in toolbar to add rows and the row menu to delete entries.")
-
+        
+        # Add/Delete buttons
+        col1, col2 = st.columns([1, 1])
+        with col1:
+            if st.button(f"➕ Add Row", key=f'add_{array_key}'):
+                st.session_state[array_key].append(default_row.copy())
+                st.rerun()
+        with col2:
+            if len(current_items) > 0:
+                if st.button(f"🗑️ Delete Last Row", key=f'delete_{array_key}'):
+                    st.session_state[array_key].pop()
+                    st.rerun()
+        
+        # Render data editor (without dynamic rows to avoid conflicts)
+        df = pd.DataFrame(current_items) if current_items else pd.DataFrame(columns=list(properties.keys()))
+        
+        # Handle date columns
+        for column_name, prop_config in properties.items():
+            if prop_config.get("type") == "date" and column_name in df.columns:
+                df[column_name] = pd.to_datetime(df[column_name], errors="coerce")
+        
+        column_config = generate_column_config(properties)
+        
         edited_df = st.data_editor(
             df,
             column_config=column_config,
-            num_rows="dynamic",
+            num_rows="fixed",  # Use manual buttons instead
             use_container_width=True,
-            key=f"data_editor_{field_name}",
-            hide_index=True
+            hide_index=False,
+            key=f'editor_{array_key}'
         )
-
-        working_array = clean_object_array(edited_df.to_dict("records"), properties)
-        SandboxSessionManager.sync_array_field(field_name, working_array)
-
-        validation_errors = validate_object_array(field_name, working_array, items_config)
-        if validation_errors:
-            for error in validation_errors:
-                st.error(error)
-        elif working_array:
-            st.success(f"{len(working_array)} objects valid")
-
-    SandboxSessionManager.sync_array_field(field_name, working_array)
-    return working_array
+        
+        # CRITICAL: Store edited DataFrame in a separate key for data collection
+        # This is read during data collection, NOT used to update the source array
+        st.session_state[f'{array_key}_current'] = edited_df
+    
+    # Return current items for immediate use (validation display)
+    # Data collection will read from {array_key}_current
+    return clean_object_array(edited_df.to_dict('records'), properties)
 
 def generate_column_config(properties: Dict[str, Dict[str, Any]]) -> Dict[str, Any]:
     """Generate column configuration for st.data_editor based on object properties"""
@@ -1528,6 +1832,10 @@ def validate_object_item(item_path: str, obj: Dict[str, Any], properties: Dict[s
         value = obj[prop_name]
         
         # Validate property value
+        # Debug: Log what we're validating
+        if prop_type == "integer" and prop_name == "count":
+            logger.debug(f"[validate_object_item] Validating {prop_name}: value={value}, type={type(value)}, prop_config={prop_config}")
+        
         prop_errors = validate_scalar_item(f"{item_path}.{prop_name}", value, prop_type, prop_config)
         errors.extend(prop_errors)
     
@@ -2631,6 +2939,100 @@ def render_test_scenarios_page(test_schemas: Dict, test_data: Dict):
                     file_name=f"quick_feedback_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json",
                     mime="application/json"
                 )
+
+def render_option_a_test_page():
+    """
+    Render the Complete Editor Test page.
+    This demonstrates all field types working together: scalars, scalar arrays, and object arrays.
+    """
+    st.header("Complete Editor Test")
+    st.caption("Full Integration: Scalar Fields + Scalar Arrays + Object Arrays")
+    
+    st.info("""
+    **This page demonstrates a complete form with:**
+    - ✅ Normal scalar fields (text, number, date, boolean)
+    - ✅ Scalar arrays (tags - array of strings)
+    - ✅ Object arrays (line items - array of objects)
+    - ✅ Manual Add/Delete buttons for arrays
+    - ✅ Cross-field validation (total must match sum of line items)
+    - ✅ Reset functionality
+    
+    **Test the validation rules by intentionally breaking constraints!**
+    """)
+    
+    # Import the test module and run it
+    try:
+        # Import the option_a_architecture_test module
+        import sys
+        from pathlib import Path
+        
+        # Add sandbox directory to path if not already there
+        sandbox_dir = Path(__file__).parent
+        if str(sandbox_dir) not in sys.path:
+            sys.path.insert(0, str(sandbox_dir))
+        
+        # Import and run the main function from option_a_architecture_test
+        from option_a_architecture_test import main as run_option_a_test
+        
+        # Run the test
+        run_option_a_test()
+        
+    except Exception as e:
+        st.error(f"Error loading Option A Architecture Test: {e}")
+        st.markdown("""
+        **Fallback:** Run the test directly with:
+        ```bash
+        python -m streamlit run sandbox/option_a_architecture_test.py
+        ```
+        """)
+
+
+def render_test_scenarios_page(test_schemas: Dict, test_data: Dict):
+    """Render test scenarios page for structured feedback collection"""
+    st.header("Test Scenarios")
+    st.markdown("Run predefined test scenarios and provide feedback")
+    
+    st.info("""
+    This page will contain structured test scenarios for:
+    - Adding/removing array items
+    - Editing with various constraints
+    - Validation error handling
+    - User experience feedback
+    
+    **Coming soon!** For now, use the other test pages to explore functionality.
+    """)
+    
+    # Placeholder for future test scenarios
+    st.markdown("### Available Test Scenarios")
+    
+    scenarios = [
+        {
+            "name": "Scalar Array - String Constraints",
+            "description": "Test string array with pattern matching and length constraints",
+            "schema": "insurance_document",
+            "field": "serial_numbers"
+        },
+        {
+            "name": "Object Array - Required Fields",
+            "description": "Test object array with required field validation",
+            "schema": "purchase_order",
+            "field": "line_items"
+        },
+        {
+            "name": "Object Array - Complex Constraints",
+            "description": "Test all constraint types in object array",
+            "schema": "line_item_constraints_demo",
+            "field": "line_items"
+        }
+    ]
+    
+    for scenario in scenarios:
+        with st.expander(f"📋 {scenario['name']}", expanded=False):
+            st.markdown(f"**Description:** {scenario['description']}")
+            st.markdown(f"**Schema:** {scenario['schema']}")
+            st.markdown(f"**Field:** {scenario['field']}")
+            st.markdown("*Test scenario implementation coming soon...*")
+
 
 if __name__ == "__main__":
     main()

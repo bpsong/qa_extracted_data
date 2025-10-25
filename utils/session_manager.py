@@ -7,6 +7,7 @@ import streamlit as st
 from typing import Dict, Any, Optional
 from datetime import datetime
 import logging
+import copy
 
 logger = logging.getLogger(__name__)
 
@@ -147,7 +148,7 @@ class SessionManager:
         has_changes = data != original_data
         st.session_state.unsaved_changes = has_changes
         
-        st.session_state.form_data = data
+        st.session_state.form_data = copy.deepcopy(data)
         SessionManager.update_activity()
         
         # Clear diff cache when data changes
@@ -161,11 +162,11 @@ class SessionManager:
     @staticmethod
     def set_original_data(data: Dict[str, Any]):
         """Set the original data."""
-        st.session_state.original_data = data
+        st.session_state.original_data = copy.deepcopy(data)
         
         # Initialize form data with original data if not set
         if not st.session_state.get('form_data'):
-            st.session_state.form_data = data.copy()
+            st.session_state.form_data = copy.deepcopy(data)
     
     @staticmethod
     def get_schema() -> Dict[str, Any]:
