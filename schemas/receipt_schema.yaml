@@ -127,38 +127,40 @@ fields:
     help: "Tip amount if applicable"
     
   merchant_address:
-    type: object
+    type: array
     label: "Merchant Address"
     required: false
     help: "Merchant location information"
-    properties:
-      street_address:
-        type: string
-        label: "Street Address"
-        required: false
-        max_length: 200
-      city:
-        type: string
-        label: "City"
-        required: false
-        max_length: 100
-      state_province:
-        type: string
-        label: "State/Province"
-        required: false
-        max_length: 100
-      postal_code:
-        type: string
-        label: "Postal Code"
-        required: false
-        pattern: "^[A-Z0-9\\s-]+$"
-        max_length: 20
-      country:
-        type: string
-        label: "Country"
-        required: false
-        max_length: 100
-        
+    items:
+      type: object
+      properties:
+        street_address:
+          type: string
+          label: "Street Address"
+          required: false
+          max_length: 200
+        city:
+          type: string
+          label: "City"
+          required: false
+          max_length: 100
+        state_province:
+          type: string
+          label: "State/Province"
+          required: false
+          max_length: 100
+        postal_code:
+          type: string
+          label: "Postal Code"
+          required: false
+          pattern: "^[A-Z0-9\s-]+$"
+          max_length: 20
+        country:
+          type: string
+          label: "Country"
+          required: false
+          max_length: 100
+
   category:
     type: enum
     label: "Category"
@@ -184,8 +186,8 @@ fields:
     help: "AI extraction confidence score (0-1)"
     
   extraction_timestamp:
-    type: datetime
-    label: "Extraction Timestamp"
+    type: date
+    label: "Extraction Date"
     required: false
     readonly: true
-    help: "When this data was extracted from the PDF"
+    help: "Date when this data was extracted from the PDF"

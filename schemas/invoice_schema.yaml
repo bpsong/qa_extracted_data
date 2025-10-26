@@ -115,81 +115,85 @@ fields:
           min_value: 0
         
   "Billing address":
-    type: object
+    type: array
     label: "Billing Address"
     required: false
     help: "Billing address information"
-    properties:
-      "Company name":
-        type: string
-        label: "Company Name"
-        required: false
-        max_length: 200
-      "Street address":
-        type: string
-        label: "Street Address"
-        required: false
-        max_length: 200
-      "City":
-        type: string
-        label: "City"
-        required: false
-        max_length: 100
-      "State/Province":
-        type: string
-        label: "State/Province"
-        required: false
-        max_length: 100
-      "Postal code":
-        type: string
-        label: "Postal Code"
-        required: false
-        pattern: "^[A-Z0-9\\s-]+$"
-        max_length: 20
-      "Country":
-        type: string
-        label: "Country"
-        required: false
-        max_length: 100
-        
+    items:
+      type: object
+      properties:
+        "Company name":
+          type: string
+          label: "Company Name"
+          required: false
+          max_length: 200
+        "Street address":
+          type: string
+          label: "Street Address"
+          required: false
+          max_length: 200
+        "City":
+          type: string
+          label: "City"
+          required: false
+          max_length: 100
+        "State/Province":
+          type: string
+          label: "State/Province"
+          required: false
+          max_length: 100
+        "Postal code":
+          type: string
+          label: "Postal Code"
+          required: false
+          pattern: "^[A-Z0-9\s-]+$"
+          max_length: 20
+        "Country":
+          type: string
+          label: "Country"
+          required: false
+          max_length: 100
+
   "Shipping address":
-    type: object
+    type: array
     label: "Shipping Address"
     required: false
     help: "Shipping address if different from billing"
-    properties:
-      "Company name":
-        type: string
-        label: "Company Name"
-        required: false
-        max_length: 200
-      "Street address":
-        type: string
-        label: "Street Address"
-        required: false
-        max_length: 200
-      "City":
-        type: string
-        label: "City"
-        required: false
-        max_length: 100
-      "State/Province":
-        type: string
-        label: "State/Province"
-        required: false
-        max_length: 100
-      "Postal code":
-        type: string
-        label: "Postal Code"
-        required: false
-        pattern: "^[A-Z0-9\\s-]+$"
-        max_length: 20
-      "Country":
-        type: string
-        label: "Country"
-        required: false
-        max_length: 100
-        
+    items:
+      type: object
+      properties:
+        "Company name":
+          type: string
+          label: "Company Name"
+          required: false
+          max_length: 200
+        "Street address":
+          type: string
+          label: "Street Address"
+          required: false
+          max_length: 200
+        "City":
+          type: string
+          label: "City"
+          required: false
+          max_length: 100
+        "State/Province":
+          type: string
+          label: "State/Province"
+          required: false
+          max_length: 100
+        "Postal code":
+          type: string
+          label: "Postal Code"
+          required: false
+          pattern: "^[A-Z0-9\s-]+$"
+          max_length: 20
+        "Country":
+          type: string
+          label: "Country"
+          required: false
+          max_length: 100
+
   "Tax amount":
     type: number
     label: "Tax Amount"
@@ -265,8 +269,8 @@ fields:
     help: "AI extraction confidence score (0-1)"
     
   "Extraction timestamp":
-    type: datetime
-    label: "Extraction Timestamp"
+    type: date
+    label: "Extraction Date"
     required: false
     readonly: true
-    help: "When this data was extracted from the PDF"
+    help: "Date when this data was extracted from the PDF"

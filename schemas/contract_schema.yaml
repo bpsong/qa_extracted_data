@@ -61,43 +61,45 @@ fields:
     help: "Name of the first contracting party"
     
   party_a_address:
-    type: object
+    type: array
     label: "Party A Address"
     required: false
-    help: "Address of Party A"
-    properties:
-      company_name:
-        type: string
-        label: "Company Name"
-        required: false
-        max_length: 200
-      street_address:
-        type: string
-        label: "Street Address"
-        required: false
-        max_length: 200
-      city:
-        type: string
-        label: "City"
-        required: false
-        max_length: 100
-      state_province:
-        type: string
-        label: "State/Province"
-        required: false
-        max_length: 100
-      postal_code:
-        type: string
-        label: "Postal Code"
-        required: false
-        pattern: "^[A-Z0-9\\s-]+$"
-        max_length: 20
-      country:
-        type: string
-        label: "Country"
-        required: false
-        max_length: 100
-        
+    help: "Addresses for Party A"
+    items:
+      type: object
+      properties:
+        company_name:
+          type: string
+          label: "Company Name"
+          required: false
+          max_length: 200
+        street_address:
+          type: string
+          label: "Street Address"
+          required: false
+          max_length: 200
+        city:
+          type: string
+          label: "City"
+          required: false
+          max_length: 100
+        state_province:
+          type: string
+          label: "State/Province"
+          required: false
+          max_length: 100
+        postal_code:
+          type: string
+          label: "Postal Code"
+          required: false
+          pattern: "^[A-Z0-9\s-]+$"
+          max_length: 20
+        country:
+          type: string
+          label: "Country"
+          required: false
+          max_length: 100
+
   party_b_name:
     type: string
     label: "Party B Name"
@@ -106,43 +108,45 @@ fields:
     help: "Name of the second contracting party"
     
   party_b_address:
-    type: object
+    type: array
     label: "Party B Address"
     required: false
-    help: "Address of Party B"
-    properties:
-      company_name:
-        type: string
-        label: "Company Name"
-        required: false
-        max_length: 200
-      street_address:
-        type: string
-        label: "Street Address"
-        required: false
-        max_length: 200
-      city:
-        type: string
-        label: "City"
-        required: false
-        max_length: 100
-      state_province:
-        type: string
-        label: "State/Province"
-        required: false
-        max_length: 100
-      postal_code:
-        type: string
-        label: "Postal Code"
-        required: false
-        pattern: "^[A-Z0-9\\s-]+$"
-        max_length: 20
-      country:
-        type: string
-        label: "Country"
-        required: false
-        max_length: 100
-        
+    help: "Addresses for Party B"
+    items:
+      type: object
+      properties:
+        company_name:
+          type: string
+          label: "Company Name"
+          required: false
+          max_length: 200
+        street_address:
+          type: string
+          label: "Street Address"
+          required: false
+          max_length: 200
+        city:
+          type: string
+          label: "City"
+          required: false
+          max_length: 100
+        state_province:
+          type: string
+          label: "State/Province"
+          required: false
+          max_length: 100
+        postal_code:
+          type: string
+          label: "Postal Code"
+          required: false
+          pattern: "^[A-Z0-9\s-]+$"
+          max_length: 20
+        country:
+          type: string
+          label: "Country"
+          required: false
+          max_length: 100
+
   scope_of_work:
     type: string
     label: "Scope of Work"
@@ -233,8 +237,9 @@ fields:
     help: "AI extraction confidence score (0-1)"
     
   extraction_timestamp:
-    type: datetime
-    label: "Extraction Timestamp"
+    type: date
+    label: "Extraction Date"
     required: false
     readonly: true
-    help: "When this data was extracted from the PDF"
+    help: "Date when this data was extracted from the PDF"
+

@@ -54,37 +54,39 @@ fields:
     help: "Phone number"
     
   address:
-    type: object
+    type: array
     label: "Address"
     required: false
-    help: "Address information"
-    properties:
-      street:
-        type: string
-        label: "Street Address"
-        required: false
-        max_length: 200
-      city:
-        type: string
-        label: "City"
-        required: false
-        max_length: 100
-      state:
-        type: string
-        label: "State/Province"
-        required: false
-        max_length: 100
-      postal_code:
-        type: string
-        label: "Postal Code"
-        required: false
-        max_length: 20
-      country:
-        type: string
-        label: "Country"
-        required: false
-        max_length: 100
-        
+    help: "Address entries"
+    items:
+      type: object
+      properties:
+        street:
+          type: string
+          label: "Street Address"
+          required: false
+          max_length: 200
+        city:
+          type: string
+          label: "City"
+          required: false
+          max_length: 100
+        state:
+          type: string
+          label: "State/Province"
+          required: false
+          max_length: 100
+        postal_code:
+          type: string
+          label: "Postal Code"
+          required: false
+          max_length: 20
+        country:
+          type: string
+          label: "Country"
+          required: false
+          max_length: 100
+
   amount:
     type: number
     label: "Amount"
@@ -141,62 +143,76 @@ fields:
       max_length: 50
       
   custom_fields:
-    type: object
+    type: array
     label: "Custom Fields"
     required: false
     help: "Additional custom data fields"
-    properties: {}
-    
+    items:
+      type: object
+      properties:
+        field_name:
+          type: string
+          label: "Field Name"
+          required: true
+          max_length: 100
+        field_value:
+          type: string
+          label: "Field Value"
+          required: false
+          max_length: 500
+
   metadata:
-    type: object
+    type: array
     label: "Metadata"
     required: false
     help: "Document metadata and processing information"
-    properties:
-      file_name:
-        type: string
-        label: "Original File Name"
-        required: false
-        readonly: true
-        max_length: 255
-      file_size:
-        type: integer
-        label: "File Size (bytes)"
-        required: false
-        readonly: true
-        min_value: 0
-      page_count:
-        type: integer
-        label: "Page Count"
-        required: false
-        readonly: true
-        min_value: 1
-      extraction_method:
-        type: string
-        label: "Extraction Method"
-        required: false
-        readonly: true
-        max_length: 100
-      extraction_confidence:
-        type: number
-        label: "Extraction Confidence"
-        required: false
-        readonly: true
-        min_value: 0
-        max_value: 1
-      extraction_timestamp:
-        type: datetime
-        label: "Extraction Timestamp"
-        required: false
-        readonly: true
-      processing_notes:
-        type: string
-        label: "Processing Notes"
-        required: false
-        readonly: true
-        max_length: 500
-        multiline: true
-        
+    items:
+      type: object
+      properties:
+        file_name:
+          type: string
+          label: "Original File Name"
+          required: false
+          readonly: true
+          max_length: 255
+        file_size:
+          type: integer
+          label: "File Size (bytes)"
+          required: false
+          readonly: true
+          min_value: 0
+        page_count:
+          type: integer
+          label: "Page Count"
+          required: false
+          readonly: true
+          min_value: 1
+        extraction_method:
+          type: string
+          label: "Extraction Method"
+          required: false
+          readonly: true
+          max_length: 100
+        extraction_confidence:
+          type: number
+          label: "Extraction Confidence"
+          required: false
+          readonly: true
+          min_value: 0
+          max_value: 1
+        extraction_timestamp:
+          type: date
+          label: "Extraction Date"
+          required: false
+          readonly: true
+        processing_notes:
+          type: string
+          label: "Processing Notes"
+          required: false
+          readonly: true
+          max_length: 500
+          multiline: true
+
   notes:
     type: string
     label: "Notes"
@@ -214,7 +230,7 @@ fields:
     help: "User who created this record"
     
   created_date:
-    type: datetime
+    type: date
     label: "Created Date"
     required: false
     readonly: true
@@ -229,7 +245,7 @@ fields:
     help: "User who last modified this record"
     
   last_modified_date:
-    type: datetime
+    type: date
     label: "Last Modified Date"
     required: false
     readonly: true
