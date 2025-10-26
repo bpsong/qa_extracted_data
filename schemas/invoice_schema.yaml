@@ -146,7 +146,7 @@ fields:
           type: string
           label: "Postal Code"
           required: false
-          pattern: "^[A-Z0-9\s-]+$"
+          pattern: "^[A-Z0-9\\s-]+$"
           max_length: 20
         "Country":
           type: string
@@ -186,7 +186,7 @@ fields:
           type: string
           label: "Postal Code"
           required: false
-          pattern: "^[A-Z0-9\s-]+$"
+          pattern: "^[A-Z0-9\\s-]+$"
           max_length: 20
         "Country":
           type: string
