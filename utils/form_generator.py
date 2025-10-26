@@ -524,6 +524,26 @@ class FormGenerator:
             col_index = 0
             
             for field_name, field_config in group_fields.items():
+                is_object_array = (
+                    field_config.get("type") == "array"
+                    and isinstance(field_config.get("items"), dict)
+                    and field_config.get("items", {}).get("type") == "object"
+                )
+
+                if is_object_array:
+                    with st.container():
+                        field_value = FormGenerator._render_field(
+                            field_name,
+                            field_config,
+                            current_data.get(field_name)
+                        )
+                        form_data[field_name] = field_value
+
+                    # restart the two-column flow after the full-width field
+                    cols = st.columns(2)
+                    col_index = 0
+                    continue
+
                 with cols[col_index % 2]:
                     field_value = FormGenerator._render_field(
                         field_name,
