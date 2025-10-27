@@ -49,11 +49,67 @@ class ArrayFieldManager:
         
         # Update field type based on selection
         if array_type == 'object':
-            field['items']['type'] = 'object'
+            field['items'] = ArrayFieldManager._sanitize_object_items(field['items'])
             ArrayFieldManager._render_object_array_config(field_id, field)
         else:
             # Render scalar array configuration
+            scalar_type = current_item_type if current_item_type in ['string', 'integer', 'number', 'boolean', 'date', 'enum'] else 'string'
+            field['items'] = ArrayFieldManager._sanitize_scalar_items(field['items'], scalar_type)
             ArrayFieldManager._render_scalar_array_config(field_id, field)
+
+    @staticmethod
+    def _sanitize_scalar_items(items_config: Dict[str, Any], item_type: str) -> Dict[str, Any]:
+        """
+        Normalize scalar item configuration, removing incompatible keys when switching types.
+        """
+        supported_scalar_types = ['string', 'integer', 'number', 'boolean', 'date', 'enum']
+        normalized_type = item_type if item_type in supported_scalar_types else 'string'
+        
+        type_specific_keys = {
+            'string': {'min_length', 'max_length', 'pattern'},
+            'number': {'min_value', 'max_value', 'step'},
+            'integer': {'min_value', 'max_value', 'step'},
+            'boolean': set(),
+            'date': set(),
+            'enum': {'choices'}
+        }
+        
+        allowed_keys = {'type', 'default'}
+        allowed_keys.update(type_specific_keys.get(normalized_type, set()))
+        if normalized_type == 'enum':
+            allowed_keys.add('choices')
+        
+        sanitized: Dict[str, Any] = {}
+        for key in allowed_keys:
+            if key == 'type':
+                continue
+            if key in items_config:
+                sanitized[key] = items_config[key]
+        
+        sanitized['type'] = normalized_type
+        return sanitized
+
+    @staticmethod
+    def _sanitize_object_items(items_config: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Normalize object item configuration, ensuring properties dict and removing scalar-only keys.
+        """
+        scalar_only_keys = {
+            'min_length', 'max_length', 'pattern', 'min_value', 'max_value', 'step',
+            'choices', 'default'
+        }
+        
+        sanitized: Dict[str, Any] = {
+            key: value for key, value in items_config.items()
+            if key not in scalar_only_keys
+        }
+        sanitized['type'] = 'object'
+        
+        properties = sanitized.get('properties')
+        if not isinstance(properties, dict):
+            sanitized['properties'] = {}
+        
+        return sanitized
     
     @staticmethod
     def _render_scalar_array_config(field_id: str, field: Dict[str, Any]) -> None:
@@ -82,7 +138,7 @@ class ArrayFieldManager:
             key=item_type_key
         )
         
-        field['items']['type'] = item_type
+        field['items'] = ArrayFieldManager._sanitize_scalar_items(field['items'], item_type)
         
         # Type-specific constraints
         ArrayFieldManager._render_scalar_constraints(field_id, field, item_type)
@@ -455,6 +511,8 @@ class ArrayFieldManager:
             errors.append("Array items must have a type specified")
             return errors
         
+        supported_scalar_types = {'string', 'integer', 'number', 'boolean', 'date', 'enum'}
+        
         if item_type == 'object':
             # Validate object array
             properties = items_config.get('properties', {})
@@ -471,11 +529,28 @@ class ArrayFieldManager:
                     if not choices:
                         errors.append(f"Enum property '{prop_name}' must have at least one choice")
         
-        elif item_type == 'enum':
-            # Validate scalar enum array
-            choices = items_config.get('choices', [])
-            if not choices:
-                errors.append("Enum arrays must have at least one choice defined")
+        elif item_type in supported_scalar_types:
+            if 'properties' in items_config:
+                errors.append("Scalar arrays cannot include 'properties'; switch to object array to configure nested fields")
+            
+            if item_type == 'enum':
+                choices = items_config.get('choices', [])
+                if not choices:
+                    errors.append("Enum arrays must have at least one choice defined")
+            elif items_config.get('choices'):
+                errors.append(f"Array items of type '{item_type}' cannot define 'choices'")
+            
+            if item_type != 'string':
+                for key in ('min_length', 'max_length', 'pattern'):
+                    if key in items_config:
+                        errors.append(f"Only string arrays may include '{key}' constraints")
+            
+            if item_type not in {'number', 'integer'}:
+                for key in ('min_value', 'max_value', 'step'):
+                    if key in items_config:
+                        errors.append(f"Only numeric arrays may include '{key}' constraints")
+        else:
+            errors.append(f"Array items have unsupported type '{item_type}'")
         
         return errors
     

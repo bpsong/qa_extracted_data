@@ -320,62 +320,91 @@ class FormGenerator:
                 
                 # For scalar arrays, collect from individual item widgets
                 if item_type != 'object':
-                    field_key = f"scalar_array_{field_name}"
-                    field_storage_key = f"field_{field_name}"
-                    size_key = f"{field_key}_size"
+                    form_version = st.session_state.get('form_version', 0)
+                    array_state_key = f"array_{field_name}_v{form_version}"
+                    legacy_array_state_key = f"scalar_array_{field_name}"
+                    versioned_field_key = f"field_{field_name}_v{form_version}"
+                    legacy_field_key = f"field_{field_name}"
+                    size_keys = [
+                        f"scalar_array_{field_name}_size_v{form_version}",
+                        f"scalar_array_{field_name}_size"
+                    ]
                     
-                    # DEBUG: Log what we're looking for
                     logger.info(f"[DEBUG] Looking for array field: {field_name}")
-                    logger.info(f"[DEBUG] Size key: {size_key}")
-                    logger.info(f"[DEBUG] Size key in session_state: {size_key in st.session_state}")
+                    logger.info(f"[DEBUG] Array state key: {array_state_key} present: {array_state_key in st.session_state}")
                     
-                    # Get the array size from session state
-                    if size_key in st.session_state:
-                        array_size = st.session_state[size_key]
-                        logger.info(f"[DEBUG] Array size: {array_size}")
-                        
-                        collected_array: List[Any] = []
-                        item_keys_found = False
-                        
-                        # Collect values from individual item widgets
-                        for i in range(array_size):
-                            item_key = f"{field_key}_item_{i}"
-                            if item_key in st.session_state:
-                                item_keys_found = True
-                                value = st.session_state[item_key]
-                                collected_array.append(value)
-                                logger.info(f"[DEBUG] Collected item {i}: {value}")
-                            else:
-                                logger.warning(f"[DEBUG] Item key not found: {item_key}")
-
-                        if not item_keys_found or len(collected_array) != array_size:
-                            stored_value = st.session_state.get(field_storage_key)
-                            if isinstance(stored_value, list):
-                                collected_array = copy.deepcopy(stored_value)
-                                logger.info(f"[DEBUG] Fallback collected array from field state: {collected_array}")
-                            else:
-                                stored_value = st.session_state.get(field_key)
-                                if isinstance(stored_value, list):
-                                    collected_array = copy.deepcopy(stored_value)
-                                    logger.info(f"[DEBUG] Fallback collected array from legacy scalar key: {collected_array}")
-                                else:
-                                    collected_array = []
-                                    logger.warning(f"[DEBUG] Unable to find scalar array items or field state for {field_name}")
-                        
-                        # DEBUG: Log before and after
-                        logger.info(f"[DEBUG] Original form_data[{field_name}]: {form_data.get(field_name)}")
-                        logger.info(f"[DEBUG] Collected array: {collected_array}")
-                        
-                        # Update form_data with collected array
-                        form_data[field_name] = collected_array
-                        
-                        # Also sync to session state for consistency
-                        FormGenerator._sync_array_to_session(field_name, collected_array)
-                        
-                        logger.info(f"[DEBUG] Updated form_data[{field_name}]: {form_data[field_name]}")
+                    collected_array: List[Any] = []
+                    
+                    if array_state_key in st.session_state and isinstance(st.session_state[array_state_key], list):
+                        collected_array = [
+                            FormGenerator._coerce_scalar_value(item_type, value, items_config)
+                            for value in st.session_state[array_state_key]
+                        ]
+                        logger.info(f"[DEBUG] Collected {len(collected_array)} items from {array_state_key}")
+                    elif versioned_field_key in st.session_state and isinstance(st.session_state[versioned_field_key], list):
+                        collected_array = [
+                            FormGenerator._coerce_scalar_value(item_type, value, items_config)
+                            for value in st.session_state[versioned_field_key]
+                        ]
+                        logger.info(f"[DEBUG] Collected {len(collected_array)} items from {versioned_field_key}")
+                    elif legacy_field_key in st.session_state and isinstance(st.session_state[legacy_field_key], list):
+                        collected_array = [
+                            FormGenerator._coerce_scalar_value(item_type, value, items_config)
+                            for value in st.session_state[legacy_field_key]
+                        ]
+                        logger.info(f"[DEBUG] Collected {len(collected_array)} items from legacy {legacy_field_key}")
+                    elif legacy_array_state_key in st.session_state and isinstance(st.session_state[legacy_array_state_key], list):
+                        collected_array = [
+                            FormGenerator._coerce_scalar_value(item_type, value, items_config)
+                            for value in st.session_state[legacy_array_state_key]
+                        ]
+                        logger.info(f"[DEBUG] Collected {len(collected_array)} items from legacy {legacy_array_state_key}")
                     else:
-                        logger.warning(f"[DEBUG] Size key not found in session_state: {size_key}")
-                        logger.info(f"[DEBUG] Available keys: {[k for k in st.session_state.keys() if 'scalar_array' in str(k) or field_name in str(k)]}")
+                        size_hint = None
+                        for size_key in size_keys:
+                            if size_key in st.session_state:
+                                size_hint = st.session_state[size_key]
+                                break
+                        if size_hint is None and array_state_key in st.session_state and isinstance(st.session_state[array_state_key], list):
+                            size_hint = len(st.session_state[array_state_key])
+                        logger.info(f"[DEBUG] Size hint for {field_name}: {size_hint}")
+                        
+                        if size_hint is not None:
+                            collected_candidates: List[Any] = []
+                            key_prefixes = [
+                                f"{array_state_key}_item_",
+                                f"{legacy_array_state_key}_item_"
+                            ]
+                            for i in range(int(size_hint)):
+                                value_found = False
+                                for prefix in key_prefixes:
+                                    widget_key = f"{prefix}{i}"
+                                    if widget_key in st.session_state:
+                                        collected_candidates.append(
+                                            FormGenerator._coerce_scalar_value(
+                                                item_type,
+                                                st.session_state[widget_key],
+                                                items_config
+                                            )
+                                        )
+                                        value_found = True
+                                        break
+                                if not value_found:
+                                    logger.debug(f"[DEBUG] Item key not found for {field_name} at index {i} with prefixes {key_prefixes}")
+                                    break
+                            if collected_candidates:
+                                collected_array = collected_candidates
+                                logger.info(f"[DEBUG] Collected {len(collected_array)} items from widget prefixes for {field_name}")
+                        else:
+                            logger.warning(f"[DEBUG] No size hint available for {field_name}; session_state keys: {[k for k in st.session_state.keys() if field_name in str(k)]}")
+                    
+                    logger.info(f"[DEBUG] Final collected array for {field_name}: {collected_array}")
+                    form_data[field_name] = collected_array
+                    
+                    # Also sync to session state for consistency
+                    FormGenerator._sync_array_to_session(field_name, collected_array)
+                    
+                    logger.info(f"[DEBUG] Updated form_data[{field_name}]: {form_data[field_name]}")
                 
                 # For object arrays, data_editor handles its own state
                 # No additional collection needed
@@ -1147,7 +1176,15 @@ class FormGenerator:
         
         # Initialize if needed
         if array_key not in st.session_state:
-            st.session_state[array_key] = list(current_value or [])
+            st.session_state[array_key] = [
+                FormGenerator._coerce_scalar_value(item_type, item, items_config)
+                for item in list(current_value or [])
+            ]
+        else:
+            st.session_state[array_key] = [
+                FormGenerator._coerce_scalar_value(item_type, item, items_config)
+                for item in st.session_state[array_key]
+            ]
         
         # Display field label
         label = field_config.get('label', field_name)
@@ -1158,6 +1195,7 @@ class FormGenerator:
         
         # Display current items
         items = st.session_state[array_key]
+        normalized_values: List[Any] = []
         
         # Render each item with its own input field and delete button
         for i, item in enumerate(items):
@@ -1165,29 +1203,18 @@ class FormGenerator:
             with col1:
                 item_key = f'{array_key}_item_{i}'
                 if item_key not in st.session_state:
-                    st.session_state[item_key] = item
+                    st.session_state[item_key] = FormGenerator._coerce_scalar_value(item_type, item, items_config)
                 
-                # Use appropriate widget based on item type
-                if item_type == "number":
-                    st.number_input(
-                        f"Item {i+1}",
-                        key=item_key,
-                        label_visibility="collapsed",
-                        format="%.2f"
-                    )
-                elif item_type == "integer":
-                    st.number_input(
-                        f"Item {i+1}",
-                        key=item_key,
-                        label_visibility="collapsed",
-                        step=1
-                    )
-                else:  # string or other types
-                    st.text_input(
-                        f"Item {i+1}",
-                        key=item_key,
-                        label_visibility="collapsed"
-                    )
+                widget_value = FormGenerator._render_scalar_input(
+                    field_name,
+                    item_type,
+                    st.session_state[item_key],
+                    items_config,
+                    item_key
+                )
+                coerced_value = FormGenerator._coerce_scalar_value(item_type, widget_value, items_config)
+                st.session_state[item_key] = coerced_value
+                normalized_values.append(coerced_value)
             
             with col2:
                 if st.button("🗑️", key=f'delete_{array_key}_{i}'):
@@ -1198,59 +1225,51 @@ class FormGenerator:
                     for j in range(len(items)):
                         key_j = f'{array_key}_item_{j}'
                         if key_j in st.session_state:
-                            current_values.append(st.session_state[key_j])
+                            current_values.append(
+                                FormGenerator._coerce_scalar_value(
+                                    item_type,
+                                    st.session_state[key_j],
+                                    items_config
+                                )
+                            )
                         else:
-                            current_values.append(items[j] if j < len(items) else "")
+                            current_values.append(
+                                FormGenerator._coerce_scalar_value(
+                                    item_type,
+                                    items[j] if j < len(items) else "",
+                                    items_config
+                                )
+                            )
                     
                     # Remove the item at position i
-                    current_values.pop(i)
-                    items.pop(i)
+                    if 0 <= i < len(current_values):
+                        current_values.pop(i)
+                    st.session_state[array_key] = current_values
                     
                     # Clear all existing item keys
-                    keys_to_delete = []
-                    for key in st.session_state.keys():
-                        if str(key).startswith(f'{array_key}_item_'):
-                            keys_to_delete.append(key)
+                    keys_to_delete = [
+                        key for key in list(st.session_state.keys())
+                        if str(key).startswith(f'{array_key}_item_')
+                    ]
                     for key in keys_to_delete:
                         del st.session_state[key]
                     
-                    # Reindex remaining items with new keys
-                    for j, value in enumerate(current_values):
-                        new_key = f'{array_key}_item_{j}'
-                        st.session_state[new_key] = value
-                    
                     st.rerun()
         
+        st.session_state[array_key] = normalized_values
+
         # Add button
         if st.button(f"➕ Add Item", key=f'add_{array_key}'):
             # Add default value based on type
-            if item_type == "number":
-                default_value = 0.0
-            elif item_type == "integer":
-                default_value = 0
-            else:
-                default_value = ""
-            items.append(default_value)
+            default_value = FormGenerator._get_default_value_for_type(item_type, items_config)
+            st.session_state[array_key].append(default_value)
             st.rerun()
         
         # Collect current values from individual item keys for validation and sync
-        updated_values = []
-        for i in range(len(items)):
-            item_key = f'{array_key}_item_{i}'
-            if item_key in st.session_state:
-                value = st.session_state[item_key]
-                # Coerce to correct type
-                try:
-                    if item_type == "number":
-                        value = float(value) if value is not None else 0.0
-                    elif item_type == "integer":
-                        value = int(value) if value is not None else 0
-                    else:
-                        value = str(value) if value is not None else ""
-                    updated_values.append(value)
-                except (ValueError, TypeError):
-                    # Keep original value if coercion fails
-                    updated_values.append(items[i] if i < len(items) else "")
+        updated_values = [
+            FormGenerator._coerce_scalar_value(item_type, value, items_config)
+            for value in st.session_state[array_key]
+        ]
         
         # Sync to session state for data collection
         FormGenerator._sync_array_to_session(field_name, updated_values)

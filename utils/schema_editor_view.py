@@ -3580,6 +3580,10 @@ def validate_field(field_name: str, field_config: Dict[str, Any]) -> List[str]:
             errors.extend(validate_boolean_constraints(field_name, field_config))
         elif field_type in ['date', 'datetime']:
             errors.extend(validate_date_constraints(field_name, field_config))
+        elif field_type == 'array':
+            array_errors = ArrayFieldManager.validate_array_config(field_config)
+            for error in array_errors:
+                errors.append(f"Field '{field_name}' array: {error}")
         
     except Exception as e:
         errors.append(f"Error validating field '{field_name}': {str(e)}")

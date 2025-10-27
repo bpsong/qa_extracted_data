@@ -42,6 +42,9 @@ if "streamlit" not in sys.modules:
         expander=MagicMock(side_effect=_context_manager_mock),
         columns=MagicMock(return_value=(MagicMock(), MagicMock())),
         button=MagicMock(return_value=False),
+        text_input=MagicMock(side_effect=lambda *args, **kwargs: kwargs.get("value", "")),
+        number_input=MagicMock(side_effect=lambda *args, **kwargs: kwargs.get("value", 0)),
+        checkbox=MagicMock(side_effect=lambda *args, **kwargs: kwargs.get("value", False)),
         selectbox=MagicMock(return_value="none"),
         form_submit_button=MagicMock(return_value=False),
         markdown=MagicMock(),
@@ -247,6 +250,50 @@ def test_render_array_editor_delegates_to_object_editor(session_state):
     assert result == [{"code": "A"}]
     object_editor.assert_called_once()
     scalar_editor.assert_not_called()
+
+
+def test_scalar_array_editor_preserves_boolean_types(session_state):
+    session_state["form_version"] = 0
+    field_config = {
+        "type": "array",
+        "items": {"type": "boolean"},
+    }
+
+    with patch.object(SessionManager, "get_form_data", return_value={}), patch.object(
+        SessionManager, "set_form_data"
+    ):
+        result = FormGenerator._render_scalar_array_editor("flags", field_config, [True, False])
+
+    assert result == [True, False]
+    assert all(isinstance(value, bool) for value in result)
+    assert session_state["field_flags_v0"] == [True, False]
+    assert session_state["scalar_array_flags_size_v0"] == 2
+
+
+def test_collect_array_data_respects_versioned_scalar_keys(session_state):
+    session_state.update(
+        {
+            "form_version": 2,
+            "array_tags_v2": ["alpha", "beta"],
+            "field_tags_v2": ["alpha", "beta"],
+            "scalar_array_tags_size_v2": 2,
+        }
+    )
+    schema = {
+        "fields": {
+            "tags": {
+                "type": "array",
+                "items": {"type": "string"},
+            }
+        }
+    }
+
+    with patch.object(FormGenerator, "_sync_array_to_session") as sync_mock:
+        collected = FormGenerator._collect_array_data_from_widgets(schema, {})
+
+    assert collected["tags"] == ["alpha", "beta"]
+    sync_mock.assert_called_once()
+    assert sync_mock.call_args[0][1] == ["alpha", "beta"]
 
 
 def test_validate_scalar_array_enforces_constraints():
