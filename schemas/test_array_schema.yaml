@@ -1,32 +1,70 @@
-title: "Array Test Schema"
-description: "Test schema for array of scalar values support"
-
+title: Array Test Schema
+description: Test schema for array of scalar values support
 fields:
-  "Supplier name":
+  Supplier name:
     type: string
-    label: "Supplier Name"
+    label: Supplier Name
     required: true
-    help: "Name of the supplier company"
-
-  "Serial Numbers":
+    help: Name of the supplier company
+    readonly: false
+  Serial Numbers:
     type: array
-    label: "Serial Numbers"
+    label: Serial Numbers
     required: false
-    help: "List of equipment serial numbers"
+    help: List of equipment serial numbers
     items:
-      type: string
-
-  "Invoice Amount":
-    type: number
-    label: "Invoice Amount"
-    required: true
-    help: "Total invoice amount"
-
-  "Tags":
+      type: boolean
+      default: false
+    readonly: false
+  Tags:
     type: array
-    label: "Tags"
+    label: Tags
     required: false
-    help: "List of tags for categorization"
+    help: List of tags for categorization
     items:
-      type: string
       min_length: 1
+      type: string
+      max_length: 100
+    readonly: false
+  invoice items:
+    type: array
+    label: Field 1
+    required: false
+    readonly: false
+    items:
+      type: object
+      properties:
+        item short description:
+          type: string
+          label: Item Short Description
+          required: true
+          max_length: 100
+          min_length: 1
+        quantity:
+          type: integer
+          label: Quantity
+          required: false
+          max_length: 100
+          min_value: 1
+          max_value: 400
+        price:
+          type: number
+          label: Price
+          required: false
+          max_length: 100
+          min_value: 0.02
+          max_value: 300.0
+        item date:
+          type: date
+          label: Item Date
+          required: false
+          max_length: 100
+        paynow:
+          type: enum
+          label: Paynow
+          required: false
+          max_length: 100
+          choices:
+          - 'yes'
+          - 'no'
+schema_version: 1

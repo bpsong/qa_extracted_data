@@ -456,18 +456,44 @@ class ArrayFieldManager:
         elif prop_type in ['integer', 'number']:
             col1, col2 = st.columns(2)
             
+            # Determine step and default values based on type
+            if prop_type == 'integer':
+                step = 1
+                default_min = 0
+                default_max = 1000
+            else:  # number
+                step = 0.01
+                default_min = 0.0
+                default_max = 1000.0
+            
             with col1:
+                current_min = prop_config.get('min_value')
+                if current_min is not None:
+                    # Preserve existing value with correct type
+                    min_value = int(current_min) if prop_type == 'integer' else float(current_min)
+                else:
+                    min_value = default_min
+                
                 min_value = st.number_input(
                     "Min Value",
-                    value=prop_config.get('min_value', 0),
+                    value=min_value,
+                    step=step,
                     key=f"prop_numeric_min_{field_id}_{prop_name}"
                 )
                 prop_config['min_value'] = min_value
             
             with col2:
+                current_max = prop_config.get('max_value')
+                if current_max is not None:
+                    # Preserve existing value with correct type
+                    max_value = int(current_max) if prop_type == 'integer' else float(current_max)
+                else:
+                    max_value = default_max
+                
                 max_value = st.number_input(
                     "Max Value",
-                    value=prop_config.get('max_value', 1000),
+                    value=max_value,
+                    step=step,
                     key=f"prop_numeric_max_{field_id}_{prop_name}"
                 )
                 prop_config['max_value'] = max_value
