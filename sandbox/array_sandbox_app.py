@@ -1395,7 +1395,7 @@ def render_scalar_array_editor(field_name: str, field_config: Dict[str, Any], cu
                 )
         
         with col2:
-            if st.button("🗑️", key=f'delete_{array_key}_{i}', help="Delete this item"):
+            if st.button("Delete", key=f'delete_{array_key}_{i}', help="Delete this item"):
                 # Delete this item
                 del st.session_state[item_key]
                 current_items.pop(i)
@@ -1403,7 +1403,7 @@ def render_scalar_array_editor(field_name: str, field_config: Dict[str, Any], cu
     
     # Add button
     default_value = get_default_value_for_type(item_type, items_config)
-    if st.button(f"➕ Add {field_config.get('label', field_name)}", key=f'add_{array_key}'):
+    if st.button(f"Add {field_config.get('label', field_name)}", key=f'add_{array_key}'):
         current_items.append(default_value)
         st.rerun()
 
@@ -1411,6 +1411,66 @@ def render_scalar_array_editor(field_name: str, field_config: Dict[str, Any], cu
 # Note: build_scalar_column_config and prepare_scalar_value_for_editor removed
 # These were only needed for the table-based approach
 # Individual fields use native Streamlit widgets which handle type conversion
+
+
+def render_scalar_input(field_name: str, item_type: str, current_value: Any, items_config: Dict[str, Any], key: str) -> Any:
+    """Render a single scalar input widget and normalise the return value."""
+    if item_type == "string":
+        return st.text_input(field_name, value=str(current_value) if current_value is not None else "", key=key)
+
+    if item_type == "number":
+        return st.number_input(
+            field_name,
+            value=float(current_value) if isinstance(current_value, (int, float)) else 0.0,
+            min_value=items_config.get("min_value"),
+            max_value=items_config.get("max_value"),
+            step=items_config.get("step", 0.01),
+            key=key,
+        )
+
+    if item_type == "integer":
+        int_value = 0
+        if isinstance(current_value, (int, float)) and not isinstance(current_value, bool):
+            int_value = int(current_value)
+        return int(
+            st.number_input(
+                field_name,
+                value=int_value,
+                min_value=items_config.get("min_value"),
+                max_value=items_config.get("max_value"),
+                step=items_config.get("step", 1),
+                key=key,
+                format="%d",
+            )
+        )
+
+    if item_type == "boolean":
+        return st.checkbox(field_name, value=current_value if isinstance(current_value, bool) else False, key=key)
+
+    if item_type == "date":
+        if isinstance(current_value, date):
+            initial_date = current_value
+        elif isinstance(current_value, datetime):
+            initial_date = current_value.date()
+        elif isinstance(current_value, str):
+            try:
+                initial_date = datetime.strptime(current_value, "%Y-%m-%d").date()
+            except ValueError:
+                initial_date = date.today()
+        else:
+            initial_date = date.today()
+
+        selected = st.date_input(field_name, value=initial_date, key=key)
+        return selected.strftime("%Y-%m-%d") if isinstance(selected, date) else str(selected)
+
+    if item_type == "enum":
+        choices = items_config.get("choices", [])
+        index = choices.index(current_value) if current_value in choices else 0
+        selected = st.selectbox(field_name, options=choices or [current_value], index=index if choices else 0, key=key)
+        return selected
+
+    # Fallback to string input for unknown types
+    return st.text_input(field_name, value=str(current_value) if current_value is not None else "", key=key)
 
 
 def coerce_scalar_value(item_type: str, raw_value: Any, items_config: Dict[str, Any]) -> Any:

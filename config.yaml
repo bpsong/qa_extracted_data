@@ -18,12 +18,12 @@ schema:
 
 ui:
   page_title: "JSON QA Tool"
-  page_icon: "📋"
+  page_icon: ":page_facing_up:"
   layout: "wide"
   sidebar_state: "expanded"
 
 logging:
-  level: "INFO"
+  level: "DEBUG"
   format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 
 processing:

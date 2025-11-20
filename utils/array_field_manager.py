@@ -397,7 +397,7 @@ class ArrayFieldManager:
                     col_yes, col_no = st.columns(2)
                     
                     with col_yes:
-                        if st.button("✅ Yes", key=f"confirm_delete_{field_id}_{prop_name}"):
+                        if st.button("Delete", key=f"confirm_delete_{field_id}_{prop_name}"):
                             # Actually delete the property
                             if prop_name in properties_dict:
                                 del properties_dict[prop_name]
@@ -406,13 +406,13 @@ class ArrayFieldManager:
                             st.rerun()
                     
                     with col_no:
-                        if st.button("❌ No", key=f"cancel_delete_{field_id}_{prop_name}"):
+                        if st.button("Cancel", key=f"cancel_delete_{field_id}_{prop_name}"):
                             # Cancel deletion
                             del st.session_state[confirm_key]
                             st.rerun()
                 else:
                     # Show delete button
-                    if st.button("🗑️", key=f"delete_prop_{field_id}_{prop_name}", help="Delete property"):
+                    if st.button("Delete", key=f"delete_prop_{field_id}_{prop_name}", help="Delete property"):
                         st.session_state[confirm_key] = True
                         st.rerun()
         
