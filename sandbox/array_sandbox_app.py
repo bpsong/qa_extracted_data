@@ -1690,12 +1690,12 @@ def render_object_array_editor(field_name: str, field_config: Dict[str, Any], cu
         # Add/Delete buttons
         col1, col2 = st.columns([1, 1])
         with col1:
-            if st.button(f"➕ Add Row", key=f'add_{array_key}'):
+            if st.button("Add Row", key=f'add_{array_key}'):
                 st.session_state[array_key].append(default_row.copy())
                 st.rerun()
         with col2:
             if len(current_items) > 0:
-                if st.button(f"🗑️ Delete Last Row", key=f'delete_{array_key}'):
+                if st.button("Delete Last Row", key=f'delete_{array_key}'):
                     st.session_state[array_key].pop()
                     st.rerun()
         
@@ -1722,9 +1722,23 @@ def render_object_array_editor(field_name: str, field_config: Dict[str, Any], cu
         # This is read during data collection, NOT used to update the source array
         st.session_state[f'{array_key}_current'] = edited_df
     
-    # Return current items for immediate use (validation display)
-    # Data collection will read from {array_key}_current
-    return clean_object_array(edited_df.to_dict('records'), properties)
+    cleaned_records = clean_object_array(edited_df.to_dict('records'), properties)
+
+    # Keep sandbox session data aligned with production patterns for tests
+    SandboxSessionManager.update_form_field(field_name, cleaned_records)
+    state = _get_session_state()
+    state[f"object_array_{field_name}_size"] = len(cleaned_records)
+    _FAKE_STREAMLIT_SESSION[f"object_array_{field_name}_size"] = len(cleaned_records)
+
+    # Basic inline validation feedback to mirror production UX
+    errors = validate_object_array(field_name, cleaned_records, {"properties": properties})
+    has_records = bool(cleaned_records)
+    if has_records and errors:
+        st.error(f"{field_config.get('label', field_name)} has {len(errors)} validation error(s).")
+    elif has_records:
+        st.success(f"{field_config.get('label', field_name)} looks valid.")
+
+    return cleaned_records
 
 def generate_column_config(properties: Dict[str, Dict[str, Any]]) -> Dict[str, Any]:
     """Generate column configuration for st.data_editor based on object properties"""
@@ -3045,53 +3059,6 @@ def render_option_a_test_page():
         python -m streamlit run sandbox/option_a_architecture_test.py
         ```
         """)
-
-
-def render_test_scenarios_page(test_schemas: Dict, test_data: Dict):
-    """Render test scenarios page for structured feedback collection"""
-    st.header("Test Scenarios")
-    st.markdown("Run predefined test scenarios and provide feedback")
-    
-    st.info("""
-    This page will contain structured test scenarios for:
-    - Adding/removing array items
-    - Editing with various constraints
-    - Validation error handling
-    - User experience feedback
-    
-    **Coming soon!** For now, use the other test pages to explore functionality.
-    """)
-    
-    # Placeholder for future test scenarios
-    st.markdown("### Available Test Scenarios")
-    
-    scenarios = [
-        {
-            "name": "Scalar Array - String Constraints",
-            "description": "Test string array with pattern matching and length constraints",
-            "schema": "insurance_document",
-            "field": "serial_numbers"
-        },
-        {
-            "name": "Object Array - Required Fields",
-            "description": "Test object array with required field validation",
-            "schema": "purchase_order",
-            "field": "line_items"
-        },
-        {
-            "name": "Object Array - Complex Constraints",
-            "description": "Test all constraint types in object array",
-            "schema": "line_item_constraints_demo",
-            "field": "line_items"
-        }
-    ]
-    
-    for scenario in scenarios:
-        with st.expander(f"📋 {scenario['name']}", expanded=False):
-            st.markdown(f"**Description:** {scenario['description']}")
-            st.markdown(f"**Schema:** {scenario['schema']}")
-            st.markdown(f"**Field:** {scenario['field']}")
-            st.markdown("*Test scenario implementation coming soon...*")
 
 
 if __name__ == "__main__":

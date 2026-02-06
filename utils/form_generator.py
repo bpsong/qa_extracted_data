@@ -112,7 +112,7 @@ class FormGenerator:
             records: List[Dict[str, Any]] = []
 
             data_frame = editor_state.get("data")
-            if hasattr(data_frame, "to_dict"):
+            if data_frame is not None and hasattr(data_frame, "to_dict"):
                 try:
                     records = data_frame.to_dict("records")
                 except Exception:
@@ -155,7 +155,7 @@ class FormGenerator:
             related_keys = {
                 key: st.session_state.get(key)
                 for key in st.session_state.keys()
-                if key.startswith(f"data_editor_{field_name}")
+                if isinstance(key, str) and key.startswith(f"data_editor_{field_name}")
             }
             container.markdown("**Related session_state keys:**")
 
@@ -646,9 +646,10 @@ class FormGenerator:
                         
                         # Check if it's a DataFrame directly
                         if hasattr(editor_state, 'to_dict'):
-                            logger.info(f"[DEBUG collect_current_form_data] Editor state is a DataFrame with shape: {editor_state.shape if hasattr(editor_state, 'shape') else 'unknown'}")
+                            editor_shape = editor_state.shape if editor_state is not None and hasattr(editor_state, 'shape') else 'unknown'
+                            logger.info(f"[DEBUG collect_current_form_data] Editor state is a DataFrame with shape: {editor_shape}")
                             try:
-                                df_dict = editor_state.to_dict('records')
+                                df_dict = editor_state.to_dict('records') if editor_state is not None else []
                                 logger.info(f"[DEBUG collect_current_form_data] DataFrame records count: {len(df_dict)}")
                                 if df_dict:
                                     logger.info(f"[DEBUG collect_current_form_data] First DataFrame record: {df_dict[0]}")
@@ -1202,8 +1203,22 @@ class FormGenerator:
             col1, col2 = st.columns([5, 1])
             with col1:
                 item_key = f'{array_key}_item_{i}'
+                logger.debug(
+                    "[_render_scalar_array_editor] pre-render | field=%s array_key=%s item_index=%s item_key=%s key_exists=%s incoming_item=%r",
+                    field_name,
+                    array_key,
+                    i,
+                    item_key,
+                    item_key in st.session_state,
+                    item,
+                )
                 if item_key not in st.session_state:
                     st.session_state[item_key] = FormGenerator._coerce_scalar_value(item_type, item, items_config)
+                    logger.debug(
+                        "[_render_scalar_array_editor] initialized item key | item_key=%s initialized_value=%r",
+                        item_key,
+                        st.session_state[item_key],
+                    )
                 
                 widget_value = FormGenerator._render_scalar_input(
                     field_name,
@@ -1212,8 +1227,25 @@ class FormGenerator:
                     items_config,
                     item_key
                 )
+                logger.debug(
+                    "[_render_scalar_array_editor] post-widget | item_key=%s widget_value=%r session_state_value=%r",
+                    item_key,
+                    widget_value,
+                    st.session_state.get(item_key),
+                )
                 coerced_value = FormGenerator._coerce_scalar_value(item_type, widget_value, items_config)
-                st.session_state[item_key] = coerced_value
+                logger.debug(
+                    "[_render_scalar_array_editor] pre-session-write | item_key=%s coerced_value=%r existing_session_state_value=%r",
+                    item_key,
+                    coerced_value,
+                    st.session_state.get(item_key),
+                )
+                logger.debug(
+                    "[_render_scalar_array_editor] skip-session-write | item_key=%s using_widget_value=%r session_state_stays=%r",
+                    item_key,
+                    coerced_value,
+                    st.session_state.get(item_key),
+                )
                 normalized_values.append(coerced_value)
             
             with col2:
@@ -1245,14 +1277,30 @@ class FormGenerator:
                     if 0 <= i < len(current_values):
                         current_values.pop(i)
                     st.session_state[array_key] = current_values
+                    logger.debug(
+                        "[_render_scalar_array_editor] delete-item | field=%s array_key=%s deleted_index=%s remaining_count=%s",
+                        field_name,
+                        array_key,
+                        i,
+                        len(current_values),
+                    )
                     
                     # Clear all existing item keys
                     keys_to_delete = [
                         key for key in list(st.session_state.keys())
                         if str(key).startswith(f'{array_key}_item_')
                     ]
+                    logger.debug(
+                        "[_render_scalar_array_editor] reindex-cleanup | array_key=%s keys_to_delete=%s",
+                        array_key,
+                        keys_to_delete,
+                    )
                     for key in keys_to_delete:
                         del st.session_state[key]
+                    logger.debug(
+                        "[_render_scalar_array_editor] reindex-cleanup-complete | array_key=%s",
+                        array_key,
+                    )
                     
                     st.rerun()
         
@@ -1746,7 +1794,6 @@ class FormGenerator:
         if item_type == "string":
             value = st.text_input(
                 f"Item {key.split('_')[-1]}",
-                value=str(current_value) if current_value is not None else "",
                 key=key,
                 help=f"String value for {field_name}"
             )
@@ -1764,7 +1811,6 @@ class FormGenerator:
             
             value = st.number_input(
                 f"Item {key.split('_')[-1]}",
-                value=float(current_value) if current_value is not None else 0.0,
                 min_value=min_val,
                 max_value=max_val,
                 step=step,
@@ -1786,7 +1832,6 @@ class FormGenerator:
             
             value = st.number_input(
                 f"Item {key.split('_')[-1]}",
-                value=int(current_value) if current_value is not None else 0,
                 min_value=min_val,
                 max_value=max_val,
                 step=step,
@@ -1799,7 +1844,6 @@ class FormGenerator:
         elif item_type == "boolean":
             value = st.checkbox(
                 f"Item {key.split('_')[-1]}",
-                value=bool(current_value) if current_value is not None else False,
                 key=key,
                 help=f"Boolean value for {field_name}"
             )
@@ -1822,7 +1866,6 @@ class FormGenerator:
             
             value = st.date_input(
                 f"Item {key.split('_')[-1]}",
-                value=current_date,
                 key=key,
                 help=f"Date value for {field_name}"
             )
@@ -1839,7 +1882,6 @@ class FormGenerator:
                 # Fallback to text input if no choices defined
                 return st.text_input(
                     f"Item {key.split('_')[-1]}",
-                    value=str(current_value) if current_value is not None else "",
                     key=key,
                     help=f"Enum value for {field_name}"
                 )
@@ -1853,7 +1895,6 @@ class FormGenerator:
             value = st.selectbox(
                 f"Item {key.split('_')[-1]}",
                 choices,
-                index=current_index,
                 key=key,
                 help=f"Select value for {field_name}"
             )
@@ -1863,7 +1904,6 @@ class FormGenerator:
             # Fallback to text input
             value = st.text_input(
                 f"Item {key.split('_')[-1]}",
-                value=str(current_value) if current_value is not None else "",
                 key=key,
                 help=f"Value for {field_name}"
             )
