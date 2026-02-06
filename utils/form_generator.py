@@ -1203,22 +1203,8 @@ class FormGenerator:
             col1, col2 = st.columns([5, 1])
             with col1:
                 item_key = f'{array_key}_item_{i}'
-                logger.debug(
-                    "[_render_scalar_array_editor] pre-render | field=%s array_key=%s item_index=%s item_key=%s key_exists=%s incoming_item=%r",
-                    field_name,
-                    array_key,
-                    i,
-                    item_key,
-                    item_key in st.session_state,
-                    item,
-                )
                 if item_key not in st.session_state:
                     st.session_state[item_key] = FormGenerator._coerce_scalar_value(item_type, item, items_config)
-                    logger.debug(
-                        "[_render_scalar_array_editor] initialized item key | item_key=%s initialized_value=%r",
-                        item_key,
-                        st.session_state[item_key],
-                    )
                 
                 widget_value = FormGenerator._render_scalar_input(
                     field_name,
@@ -1227,25 +1213,7 @@ class FormGenerator:
                     items_config,
                     item_key
                 )
-                logger.debug(
-                    "[_render_scalar_array_editor] post-widget | item_key=%s widget_value=%r session_state_value=%r",
-                    item_key,
-                    widget_value,
-                    st.session_state.get(item_key),
-                )
                 coerced_value = FormGenerator._coerce_scalar_value(item_type, widget_value, items_config)
-                logger.debug(
-                    "[_render_scalar_array_editor] pre-session-write | item_key=%s coerced_value=%r existing_session_state_value=%r",
-                    item_key,
-                    coerced_value,
-                    st.session_state.get(item_key),
-                )
-                logger.debug(
-                    "[_render_scalar_array_editor] skip-session-write | item_key=%s using_widget_value=%r session_state_stays=%r",
-                    item_key,
-                    coerced_value,
-                    st.session_state.get(item_key),
-                )
                 normalized_values.append(coerced_value)
             
             with col2:
@@ -1277,30 +1245,14 @@ class FormGenerator:
                     if 0 <= i < len(current_values):
                         current_values.pop(i)
                     st.session_state[array_key] = current_values
-                    logger.debug(
-                        "[_render_scalar_array_editor] delete-item | field=%s array_key=%s deleted_index=%s remaining_count=%s",
-                        field_name,
-                        array_key,
-                        i,
-                        len(current_values),
-                    )
                     
                     # Clear all existing item keys
                     keys_to_delete = [
                         key for key in list(st.session_state.keys())
                         if str(key).startswith(f'{array_key}_item_')
                     ]
-                    logger.debug(
-                        "[_render_scalar_array_editor] reindex-cleanup | array_key=%s keys_to_delete=%s",
-                        array_key,
-                        keys_to_delete,
-                    )
                     for key in keys_to_delete:
                         del st.session_state[key]
-                    logger.debug(
-                        "[_render_scalar_array_editor] reindex-cleanup-complete | array_key=%s",
-                        array_key,
-                    )
                     
                     st.rerun()
         
