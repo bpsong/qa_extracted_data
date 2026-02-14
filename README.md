@@ -152,7 +152,9 @@ schema:
 - `date` - Date picker
 - `datetime` - Date and time picker
 - `enum` - Dropdown selection from predefined choices
-- `array` - Editable table for lists of items
+- `array` - Specialized array editors:
+  - scalar arrays use individual item inputs with add/remove controls
+  - object arrays use a table-style editor with add/remove row controls
 - `object` - Nested form sections for complex data
 
 **📖 See [SCHEMA_GUIDE.md](SCHEMA_GUIDE.md) for complete documentation with examples and troubleshooting.**
@@ -174,6 +176,11 @@ schema:
 - Locks prevent concurrent editing conflicts
 - Stale locks (older than 30 minutes) are automatically cleaned up
 - Lock status is shown in real-time in the queue view
+
+### Queue Date Filtering
+- Date presets (`Today`, `Last 7 days`, `Last 30 days`, `Last 90 days`) evaluate both `created_at` and `modified_at`
+- Filtering uses whichever timestamp is more recent for each file
+- Custom date range filters are inclusive of both start and end dates
 
 ## Configuration
 

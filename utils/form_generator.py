@@ -1794,7 +1794,7 @@ class FormGenerator:
             return int(value)
         
         elif item_type == "boolean":
-            checkbox_kwargs = {
+            checkbox_kwargs: Dict[str, Any] = {
                 "key": key,
                 "help": f"Boolean value for {field_name}",
             }
@@ -1827,7 +1827,7 @@ class FormGenerator:
                 logger.warning(f"Failed to parse date value '{current_value}': {e}")
                 current_date = datetime.now().date()
             
-            date_kwargs = {
+            date_kwargs: Dict[str, Any] = {
                 "key": key,
                 "help": f"Date value for {field_name}",
             }
@@ -1861,7 +1861,7 @@ class FormGenerator:
             except (ValueError, TypeError):
                 current_index = 0
             
-            select_kwargs = {
+            select_kwargs: Dict[str, Any] = {
                 "key": key,
                 "help": f"Select value for {field_name}",
             }
