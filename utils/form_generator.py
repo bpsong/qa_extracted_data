@@ -1500,7 +1500,7 @@ class FormGenerator:
             if column_order:
                 df = df.reindex(columns=column_order)
         else:
-            df = pd.DataFrame(columns=column_order)
+            df = pd.DataFrame(columns=pd.Index(column_order))
 
         for column_name, prop_config in properties.items():
             if prop_config.get("type") == "date" and column_name in df.columns:
@@ -1556,7 +1556,7 @@ class FormGenerator:
                 if column_order:
                     df = df.reindex(columns=column_order)
             else:
-                df = pd.DataFrame(columns=column_order)
+                df = pd.DataFrame(columns=pd.Index(column_order))
 
             edited_df = st.data_editor(
                 df,
