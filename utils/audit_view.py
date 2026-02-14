@@ -589,8 +589,10 @@ class AuditView:
                                     lines = exported_data.split('\n')[:6]  # Header + 5 rows
                                     preview_data = '\n'.join(lines)
                                     st.code(preview_data, language='csv')
-                                    if len(lines) < len(exported_data.split('\n')):
-                                        st.caption(f"Showing first 5 rows of {len(exported_data.split('\n'))-1} total rows")
+                                    total_lines = len(exported_data.split('\n'))
+                                    if len(lines) < total_lines:
+                                        total_rows = max(total_lines - 1, 0)
+                                        st.caption(f"Showing first 5 rows of {total_rows} total rows")
                                 else:
                                     import json
                                     try:
