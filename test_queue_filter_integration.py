@@ -114,7 +114,8 @@ class TestCompleteFilterPipeline:
                 'filename': 'document_report_quarterly.json',
                 'size': 6144,
                 'created_at': now - timedelta(days=35),
-                'modified_at': now - timedelta(days=30),
+                # Recently modified: should be included by "created OR modified" semantics.
+                'modified_at': now - timedelta(days=29),
                 'is_locked': False,
                 'locked_by': None,
                 'lock_expires': None
@@ -140,7 +141,8 @@ class TestCompleteFilterPipeline:
         # Check that very old files are excluded
         filenames = [f['filename'] for f in result]
         assert 'invoice_2023_old.json' not in filenames  # Too old (45 days)
-        assert 'document_report_quarterly.json' not in filenames  # Too old (35 days)
+        # Included because modified_at is within 30 days.
+        assert 'document_report_quarterly.json' in filenames
         
         # Check sorting by size (descending)
         sizes = [f['size'] for f in result]
@@ -191,10 +193,89 @@ class TestCompleteFilterPipeline:
         # Verify no very old files are included
         filenames = [f['filename'] for f in result]
         assert 'invoice_2023_old.json' not in filenames  # 45 days old
-        assert 'document_report_quarterly.json' not in filenames  # 35 days old
+        # Included because modified_at is within 30 days.
+        assert 'document_report_quarterly.json' in filenames
         
         # Check alphabetical sorting
         assert filenames == sorted(filenames)
+
+    def test_week_preset_uses_most_recent_of_created_or_modified(self):
+        """Week preset should include files if either date is recent (most recent wins)."""
+        now = datetime.now()
+        files = [
+            {
+                'filename': 'old_created_recent_modified.json',
+                'size': 1000,
+                'created_at': now - timedelta(days=20),
+                'modified_at': now - timedelta(days=6),
+                'is_locked': False,
+                'locked_by': None,
+                'lock_expires': None
+            },
+            {
+                'filename': 'old_created_old_modified.json',
+                'size': 1000,
+                'created_at': now - timedelta(days=20),
+                'modified_at': now - timedelta(days=8),
+                'is_locked': False,
+                'locked_by': None,
+                'lock_expires': None
+            },
+        ]
+
+        result = QueueView._apply_filter_pipeline(
+            files,
+            {
+                'sort_by': 'filename',
+                'sort_order': 'asc',
+                'date_preset': 'week',
+                'custom_start': None,
+                'custom_end': None
+            },
+        )
+
+        filenames = [f['filename'] for f in result]
+        assert 'old_created_recent_modified.json' in filenames
+        assert 'old_created_old_modified.json' not in filenames
+
+    def test_quarter_preset_uses_most_recent_of_created_or_modified(self):
+        """Quarter preset should include files if either date is within 90 days."""
+        now = datetime.now()
+        files = [
+            {
+                'filename': 'very_old_created_recent_modified.json',
+                'size': 1000,
+                'created_at': now - timedelta(days=120),
+                'modified_at': now - timedelta(days=89),
+                'is_locked': False,
+                'locked_by': None,
+                'lock_expires': None
+            },
+            {
+                'filename': 'very_old_created_old_modified.json',
+                'size': 1000,
+                'created_at': now - timedelta(days=120),
+                'modified_at': now - timedelta(days=91),
+                'is_locked': False,
+                'locked_by': None,
+                'lock_expires': None
+            },
+        ]
+
+        result = QueueView._apply_filter_pipeline(
+            files,
+            {
+                'sort_by': 'filename',
+                'sort_order': 'asc',
+                'date_preset': 'quarter',
+                'custom_start': None,
+                'custom_end': None
+            },
+        )
+
+        filenames = [f['filename'] for f in result]
+        assert 'very_old_created_recent_modified.json' in filenames
+        assert 'very_old_created_old_modified.json' not in filenames
     
     def test_pipeline_with_no_matching_results(self, realistic_file_data):
         """Test pipeline behavior when filters result in no matches."""

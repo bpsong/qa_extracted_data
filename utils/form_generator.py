@@ -1794,12 +1794,23 @@ class FormGenerator:
             return int(value)
         
         elif item_type == "boolean":
+            checkbox_kwargs = {
+                "key": key,
+                "help": f"Boolean value for {field_name}",
+            }
+            if key not in st.session_state:
+                checkbox_kwargs["value"] = bool(current_value)
+
             value = st.checkbox(
                 f"Item {key.split('_')[-1]}",
-                key=key,
-                help=f"Boolean value for {field_name}"
+                **checkbox_kwargs,
             )
-            return value
+            # In bare-mode tests, Streamlit can return a default while session state
+            # still holds the intended value. Prefer the keyed state when available.
+            session_value = st.session_state.get(key)
+            if isinstance(session_value, bool):
+                return session_value
+            return bool(value)
         
         elif item_type == "date":
             try:
@@ -1816,10 +1827,16 @@ class FormGenerator:
                 logger.warning(f"Failed to parse date value '{current_value}': {e}")
                 current_date = datetime.now().date()
             
+            date_kwargs = {
+                "key": key,
+                "help": f"Date value for {field_name}",
+            }
+            if key not in st.session_state:
+                date_kwargs["value"] = current_date
+
             value = st.date_input(
                 f"Item {key.split('_')[-1]}",
-                key=key,
-                help=f"Date value for {field_name}"
+                **date_kwargs,
             )
             # Ensure value is a date object before calling strftime
             if isinstance(value, date):
@@ -1844,11 +1861,17 @@ class FormGenerator:
             except (ValueError, TypeError):
                 current_index = 0
             
+            select_kwargs = {
+                "key": key,
+                "help": f"Select value for {field_name}",
+            }
+            if key not in st.session_state:
+                select_kwargs["index"] = current_index
+
             value = st.selectbox(
                 f"Item {key.split('_')[-1]}",
                 choices,
-                key=key,
-                help=f"Select value for {field_name}"
+                **select_kwargs,
             )
             return value
         

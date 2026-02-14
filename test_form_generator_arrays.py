@@ -270,6 +270,58 @@ def test_scalar_array_editor_preserves_boolean_types(session_state):
     assert session_state["scalar_array_flags_size_v0"] == 2
 
 
+def test_render_scalar_input_boolean_prefers_session_state_value(session_state):
+    key = "array_flags_v0_item_0"
+    session_state[key] = True
+
+    with patch("utils.form_generator.st.checkbox", return_value=False):
+        value = FormGenerator._render_scalar_input(
+            "flags",
+            "boolean",
+            True,
+            {},
+            key,
+        )
+
+    assert value is True
+
+
+def test_render_scalar_input_date_uses_parsed_default_when_unkeyed(session_state):
+    key = "array_dates_v0_item_0"
+    returned_date = date(2024, 3, 15)
+
+    with patch("utils.form_generator.st.date_input", return_value=returned_date) as date_input_mock:
+        value = FormGenerator._render_scalar_input(
+            "dates",
+            "date",
+            "2024-03-10",
+            {},
+            key,
+        )
+
+    call_kwargs = date_input_mock.call_args[1]
+    assert call_kwargs["value"] == date(2024, 3, 10)
+    assert value == "2024-03-15"
+
+
+def test_render_scalar_input_enum_uses_current_index_when_unkeyed(session_state):
+    key = "array_status_v0_item_0"
+    items_config = {"choices": ["new", "in_progress", "done"]}
+
+    with patch("utils.form_generator.st.selectbox", return_value="in_progress") as selectbox_mock:
+        value = FormGenerator._render_scalar_input(
+            "status",
+            "enum",
+            "in_progress",
+            items_config,
+            key,
+        )
+
+    call_kwargs = selectbox_mock.call_args[1]
+    assert call_kwargs["index"] == 1
+    assert value == "in_progress"
+
+
 def test_collect_array_data_respects_versioned_scalar_keys(session_state):
     session_state.update(
         {
