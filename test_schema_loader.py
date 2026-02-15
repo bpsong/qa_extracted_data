@@ -12,6 +12,7 @@ import pytest
 from unittest.mock import patch
 
 # Import the module to test
+import utils.schema_loader as schema_loader
 from utils.schema_loader import (
     load_schema,
     get_schema_for_file,
@@ -25,7 +26,10 @@ from utils.schema_loader import (
     load_config,
     get_configured_schema,
     reload_config,
-    get_config_value
+    get_config_value,
+    extract_field_names,
+    load_active_schema,
+    _load_schema_with_mtime,
 )
 
 
@@ -116,6 +120,23 @@ class TestSchemaLoader:
         
         result = load_schema("invalid.json")
         assert result is None
+
+    def test_load_schema_unsupported_extension(self):
+        schema_path = Path("schemas/unsupported.txt")
+        with open(schema_path, "w", encoding="utf-8") as f:
+            f.write("fields: {}")
+
+        assert load_schema("unsupported.txt") is None
+
+    def test_load_schema_invalid_structure_returns_none(self):
+        self.create_test_schema("invalid_structure.yaml", {"title": "Missing fields"})
+        assert load_schema("invalid_structure.yaml") is None
+
+    def test_load_schema_generic_exception_returns_none(self):
+        self.create_test_schema("broken.yaml", {"fields": {"a": {"type": "string"}}})
+
+        with patch("utils.schema_loader.validate_schema", side_effect=RuntimeError("boom")):
+            assert load_schema("broken.yaml") is None
     
     def test_validate_schema_valid(self):
         """Test validating a valid schema."""
@@ -143,6 +164,10 @@ class TestSchemaLoader:
         """Test validating schema without fields key."""
         schema = {"title": "Test"}
         assert validate_schema(schema) == False
+
+    def test_validate_schema_non_dict_and_non_dict_fields(self):
+        assert validate_schema("not-a-dict") is False
+        assert validate_schema({"fields": []}) is False
     
     def test_validate_schema_invalid_field_type(self):
         """Test validating schema with invalid field type."""
@@ -174,6 +199,19 @@ class TestSchemaLoader:
         }
         
         assert validate_field_config("test_field", field_config) == False
+
+    def test_validate_field_config_additional_invalid_cases(self):
+        assert validate_field_config("x", "not-a-dict") is False
+        assert validate_field_config("x", {}) is False
+        assert validate_field_config("x", {"type": "enum", "choices": []}) is False
+        assert validate_field_config("x", {"type": "array"}) is False
+        assert validate_field_config("x", {"type": "array", "items": {"type": "unknown"}}) is False
+        assert validate_field_config("x", {"type": "object"}) is False
+        assert validate_field_config("x", {"type": "object", "properties": []}) is False
+        assert validate_field_config("x", {"type": "object", "properties": {"a": {"type": "bad"}}}) is False
+        assert validate_field_config("x", {"type": "number", "min_value": "bad"}) is False
+        assert validate_field_config("x", {"type": "string", "min_length": -1}) is False
+        assert validate_field_config("x", {"type": "string", "pattern": "["}) is False
     
     def test_validate_field_config_array_with_items(self):
         """Test validating array field with items definition."""
@@ -349,6 +387,9 @@ class TestSchemaLoader:
         assert "optional_field" not in info["required_fields"]
         assert info["field_types"]["required_field"] == "string"
         assert info["field_types"]["optional_field"] == "number"
+
+    def test_get_schema_info_missing_returns_none(self):
+        assert get_schema_info("does_not_exist.yaml") is None
     
     def test_validate_data_against_schema_valid(self):
         """Test validating valid data against schema."""
@@ -389,6 +430,12 @@ class TestSchemaLoader:
         errors = validate_data_against_schema(data, schema)
         assert len(errors) == 1
         assert "Required field 'name' is missing" in errors[0]
+
+    def test_validate_data_against_schema_ignores_unknown_fields(self):
+        schema = {"fields": {"name": {"type": "string"}}}
+        data = {"name": "ok", "unknown": "value"}
+        errors = validate_data_against_schema(data, schema)
+        assert errors == []
     
     def test_validate_field_value_string_valid(self):
         """Test validating valid string field."""
@@ -453,6 +500,29 @@ class TestSchemaLoader:
         errors = validate_field_value("test_field", ["hello", "x"], field_config)
         assert len(errors) == 1
         assert "test_field[1]" in errors[0]
+
+    def test_validate_field_value_additional_types_and_constraints(self):
+        assert validate_field_value("f", None, {"type": "string", "required": False}) == []
+        assert validate_field_value("f", 1, {"type": "string"}) == ["Field 'f' must be a string"]
+        assert validate_field_value("f", "toolong", {"type": "string", "max_length": 3}) == [
+            "Field 'f' must be at most 3 characters"
+        ]
+        assert validate_field_value("f", "abc", {"type": "string", "pattern": "^\\d+$"}) == [
+            "Field 'f' does not match required pattern"
+        ]
+        assert validate_field_value("f", "x", {"type": "number"}) == ["Field 'f' must be a number"]
+        assert validate_field_value("f", -1, {"type": "number", "min_value": 0}) == [
+            "Field 'f' must be at least 0"
+        ]
+        assert validate_field_value("f", "x", {"type": "boolean"}) == ["Field 'f' must be a boolean"]
+        assert validate_field_value("f", "x", {"type": "array"}) == ["Field 'f' must be an array"]
+        assert validate_field_value("f", "x", {"type": "object"}) == ["Field 'f' must be an object"]
+        object_errors = validate_field_value(
+            "obj",
+            {},
+            {"type": "object", "properties": {"name": {"type": "string", "required": True}}},
+        )
+        assert any("obj.name" in err for err in object_errors)
 
     def test_load_config_default(self):
         """Test loading default configuration when no config file exists."""
@@ -673,6 +743,46 @@ class TestSchemaLoader:
         assert schema2["title"] == "Configured Schema"
         assert schema3["title"] == "Configured Schema"
         assert schema1 == schema2 == schema3
+
+    def test_extract_field_names_handles_invalid_schema(self):
+        assert extract_field_names({"fields": {"a": {}}}) == {"a"}
+        assert extract_field_names({"bad": {}}) == set()
+        assert extract_field_names("bad") == set()
+
+    def test_load_schema_with_mtime_delegates_to_load_schema(self):
+        with patch("utils.schema_loader.load_schema", return_value={"fields": {}}) as mock_load:
+            result = _load_schema_with_mtime("a.yaml", 123.0)
+        assert result == {"fields": {}}
+        mock_load.assert_called_once_with("a.yaml")
+
+    def test_load_active_schema_not_found(self):
+        assert load_active_schema("missing.yaml") is None
+
+    def test_load_active_schema_updates_session_state(self):
+        schema = {"fields": {"name": {"type": "string"}}, "schema_version": "v3"}
+        schema_path = Path("schemas/active.yaml")
+        schema_path.write_text("fields: {name: {type: string}}\n", encoding="utf-8")
+        fake_st = type("FakeSt", (), {"session_state": {}})()
+        with patch("utils.schema_loader._load_schema_with_mtime", return_value=schema), patch(
+            "utils.schema_loader.os.path.getmtime", return_value=42.0
+        ), patch("utils.schema_loader.st", fake_st):
+            result = load_active_schema("active.yaml")
+
+        assert result == schema
+        assert fake_st.session_state["active_schema"] == schema
+        assert fake_st.session_state["active_schema_mtime"] == 42.0
+        assert fake_st.session_state["schema_fields"] == {"name"}
+        assert fake_st.session_state["schema_version"] == "v3"
+
+    def test_load_config_generic_exception_uses_defaults(self):
+        with open("config.yaml", "w", encoding="utf-8") as f:
+            f.write("schema:\n  primary_schema: default_schema.yaml\n")
+
+        reload_config()
+        with patch("utils.schema_loader.yaml.safe_load", side_effect=RuntimeError("boom")):
+            config = load_config()
+
+        assert config["app"]["name"] == "JSON QA Webapp"
 
 
 if __name__ == "__main__":

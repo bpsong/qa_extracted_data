@@ -343,7 +343,35 @@ python -m pytest test_file_utils.py test_diff_utils.py test_model_builder.py
 
 # Run with coverage
 python -m pytest --cov=utils --cov-report=html
+
+# CI-style coverage run (term + XML)
+python -m pytest --cov=utils --cov-report=term-missing --cov-report=xml
+
+# Enforce coverage policy (core threshold + UI non-regression)
+python tools/coverage_policy.py --coverage-xml coverage.xml --policy-file coverage_policy.json
 ```
+
+### Coverage Policy
+- Policy file: `coverage_policy.json`
+- Enforcement script: `tools/coverage_policy.py`
+- Core logic modules must meet `>= 85%` coverage.
+- UI-heavy modules use a non-decreasing baseline check.
+- To refresh UI baselines intentionally after accepted improvements:
+
+```powershell
+python tools/coverage_policy.py --coverage-xml coverage.xml --policy-file coverage_policy.json --update-ui-baseline
+```
+
+### Coverage Snapshot (2026-02-15)
+- Before: `537` passing tests, `41%` total `utils` coverage
+- After: `633` passing tests, `47%` total `utils` coverage
+
+Key module deltas:
+- `utils/pdf_viewer.py`: `39.6% -> 80.2%`
+- `utils/file_utils.py`: `70.7% -> 94.2%`
+- `utils/schema_loader.py`: `73.2% -> 98.2%`
+- `utils/form_data_collector.py`: `90.9% -> 100.0%`
+- `utils/queue_filter_state.py`: `53.4% -> 81.7%`
 
 ### Adding New Features
 1. Create utility modules in `utils/` directory

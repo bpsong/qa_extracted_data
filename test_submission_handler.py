@@ -5,17 +5,22 @@ Unit tests for submission_handler module.
 import json
 import tempfile
 import shutil
+import os
 from pathlib import Path
 from datetime import datetime
+from decimal import Decimal
 from unittest.mock import patch, MagicMock
 import pytest
 
 # Import the module to test
+import utils.submission_handler as submission_handler
 from utils.submission_handler import (
     SubmissionHandler,
     validate_and_submit_data,
     handle_streamlit_submission,
-    handle_cancel_submission
+    handle_cancel_submission,
+    _sanitize_for_json,
+    _is_money_field_name,
 )
 
 
@@ -361,9 +366,92 @@ class TestSubmissionHandler:
         assert isinstance(errors, list)
 
 
+def test_sanitize_for_json_handles_dates_decimals_and_money_fields():
+    raw = {
+        "invoice_date": datetime(2026, 1, 2, 3, 4, 5),
+        "tax_amount": 862.0,
+        "line_count": 10.0,
+        "values": [Decimal("1.25"), datetime(2026, 1, 1)],
+    }
+
+    sanitized = _sanitize_for_json(raw)
+
+    assert sanitized["invoice_date"] == "2026-01-02T03:04:05"
+    assert sanitized["tax_amount"] == 862.0  # stays float for money field
+    assert sanitized["line_count"] == 10  # whole non-money floats become int
+    assert sanitized["values"][0] == 1.25
+    assert sanitized["values"][1] == "2026-01-01T00:00:00"
+
+
+def test_is_money_field_name_detection():
+    assert _is_money_field_name("invoice_amount") is True
+    assert _is_money_field_name("unitPrice") is True
+    assert _is_money_field_name("description") is False
+    assert _is_money_field_name("") is False
+
+
+def test_build_corrected_payload_filters_fields_and_attaches_schema_version():
+    with patch.object(submission_handler.st, "session_state", {"schema_version": "v9"}):
+        payload = SubmissionHandler.build_corrected_payload(
+            form_values={"a": 1, "b": 2},
+            schema_fields={"a"},
+            base_meta={"meta": True},
+        )
+
+    assert payload == {"meta": True, "a": 1, "schema_version": "v9"}
+
+
+def test_extract_field_from_error_supports_multiple_formats():
+    assert SubmissionHandler._extract_field_from_error("Field 'name' invalid") == "name"
+    assert SubmissionHandler._extract_field_from_error("Invoice Amount: must be number") == "Invoice Amount"
+    assert SubmissionHandler._extract_field_from_error("no field token") == "general"
+
+
+def test_validate_submission_data_legacy_path_model_and_business_errors():
+    with patch.object(
+        SubmissionHandler, "_validate_against_schema", return_value=["Field 'name' required"]
+    ), patch("utils.submission_handler.validate_model_data", return_value=["amount: invalid"]), patch.object(
+        SubmissionHandler, "_validate_business_rules", return_value=["Business rule failed"]
+    ):
+        errors = SubmissionHandler._validate_submission_data(
+            {"name": ""}, {"fields": {}}, model_class=object(), use_comprehensive=False
+        )
+
+    assert "Field 'name' required" in errors
+    assert "amount: invalid" in errors
+    assert "Business rule failed" in errors
+
+
+def test_validate_submission_data_handles_internal_exception():
+    with patch.object(SubmissionHandler, "comprehensive_validate_data", side_effect=RuntimeError("boom")):
+        errors = SubmissionHandler._validate_submission_data(
+            {"name": "x"}, {"fields": {"name": {"type": "string"}}}
+        )
+
+    assert any("Validation system error" in e for e in errors)
+
+
+def test_validate_against_schema_and_validate_field_required_boolean_and_optional():
+    schema = {
+        "fields": {
+            "name": {"type": "string", "required": True, "label": "Name"},
+            "flag": {"type": "boolean", "label": "Enabled"},
+            "optional_note": {"type": "string"},
+            "optional_with_min": {"type": "string", "min_length": 1},
+        }
+    }
+    data = {"name": "", "flag": "yes", "optional_note": "", "optional_with_min": ""}
+
+    errors = SubmissionHandler._validate_against_schema(data, schema)
+
+    assert "'Name' is required" in errors
+    assert "'Enabled' must be true or false" in errors
+    # empty optional string without min length is allowed
+    assert not any("optional_note" in err for err in errors)
+    # empty optional string with min_length is validated
+    assert any("optional_with_min" in err.lower() or "at least" in err.lower() for err in errors)
+
+
 if __name__ == "__main__":
     # Run tests if script is executed directly
     pytest.main([__file__])
-
-# Import os for the test setup
-import os

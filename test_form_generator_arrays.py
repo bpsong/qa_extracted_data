@@ -155,6 +155,17 @@ def test_extract_data_editor_records_returns_none_for_unknown_payload():
     assert FormGenerator._extract_data_editor_records(UnknownPayload()) is None
 
 
+def test_editor_row_index_helpers_parse_and_sort_keys():
+    assert FormGenerator._parse_editor_row_index("2") == 2
+    assert FormGenerator._parse_editor_row_index(3) == 3
+    assert FormGenerator._parse_editor_row_index("not-a-number") is None
+
+    assert FormGenerator._delete_row_sort_index("5") == 5
+    assert FormGenerator._delete_row_sort_index(4) == 4
+    assert FormGenerator._delete_row_sort_index("-1") == -1
+    assert FormGenerator._delete_row_sort_index("bad") == -1
+
+
 def test_extract_data_editor_records_applies_diff_payload():
     base_rows = [{"Description": "Item A", "Quantity": "1 PCS"}]
     payload = {

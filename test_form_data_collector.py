@@ -90,6 +90,74 @@ def test_collect_all_form_data_malformed_session_values(monkeypatch):
     assert result["metadata"] == {}
 
 
+def test_collect_all_form_data_object_array_current_not_dataframe(monkeypatch):
+    schema = {
+        "fields": {
+            "line_items": {
+                "type": "array",
+                "items": {"type": "object", "properties": {"name": {"type": "string"}}},
+            }
+        }
+    }
+    session_state = {
+        "form_version": 1,
+        "field_line_items_v1": [],
+        "array_line_items_v1_current": "not-a-dataframe",
+    }
+    monkeypatch.setattr(form_data_collector.st, "session_state", session_state)
+
+    result = form_data_collector.collect_all_form_data(schema)
+
+    assert result["line_items"] == []
+
+
+def test_collect_all_form_data_scalar_array_list_path(monkeypatch):
+    schema = {"fields": {"tags": {"type": "array", "items": {"type": "string"}}}}
+    session_state = {"form_version": 0, "field_tags_v0": ["a", "b", "c"]}
+    monkeypatch.setattr(form_data_collector.st, "session_state", session_state)
+
+    result = form_data_collector.collect_all_form_data(schema)
+
+    assert result["tags"] == ["a", "b", "c"]
+
+
+def test_collect_all_form_data_object_dict_value_kept(monkeypatch):
+    schema = {"fields": {"metadata": {"type": "object"}}}
+    session_state = {"form_version": 0, "field_metadata_v0": {"source": "ocr"}}
+    monkeypatch.setattr(form_data_collector.st, "session_state", session_state)
+
+    result = form_data_collector.collect_all_form_data(schema)
+
+    assert result["metadata"] == {"source": "ocr"}
+
+
+@pytest.mark.parametrize(
+    ("field_type", "value"),
+    [
+        ("date", 123),
+        ("datetime", 123),
+    ],
+)
+def test_collect_all_form_data_date_datetime_invalid_values(monkeypatch, field_type, value):
+    schema = {"fields": {"field_value": {"type": field_type}}}
+    session_state = {"form_version": 0, "field_field_value_v0": value}
+    monkeypatch.setattr(form_data_collector.st, "session_state", session_state)
+
+    result = form_data_collector.collect_all_form_data(schema)
+
+    assert result["field_value"] is None
+
+
+def test_collect_all_form_data_other_scalar_passthrough(monkeypatch):
+    schema = {"fields": {"priority": {"type": "integer"}}}
+    session_state = {"form_version": 0, "field_priority_v0": 5}
+    monkeypatch.setattr(form_data_collector.st, "session_state", session_state)
+
+    result = form_data_collector.collect_all_form_data(schema)
+
+    assert result["priority"] == 5
+
+
 @pytest.mark.parametrize(
     ("field_type", "value", "expected"),
     [

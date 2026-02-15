@@ -21,6 +21,27 @@ class FormGenerator:
     """Generates dynamic forms based on schemas and handles form data."""
     
     @staticmethod
+    def _parse_editor_row_index(row_key: Any) -> Optional[int]:
+        """Best-effort conversion of a data_editor row key into an integer index."""
+        try:
+            return int(row_key)
+        except (TypeError, ValueError):
+            logger.debug("[_parse_editor_row_index] Non-numeric row key %s", row_key)
+            return None
+
+    @staticmethod
+    def _delete_row_sort_index(row_key: Any) -> int:
+        """
+        Return a stable sort key for deleted row ids.
+
+        Mirrors the existing semantics used by data_editor diff handling:
+        only integer values and digit-only strings are treated as valid row ids.
+        """
+        if isinstance(row_key, (int, str)) and str(row_key).isdigit():
+            return int(row_key)
+        return -1
+
+    @staticmethod
     def _sync_array_to_session(field_name: str, array_value: List[Any]) -> None:
         """
         Synchronize array value to session state and SessionManager form data.
@@ -183,10 +204,8 @@ class FormGenerator:
         working = copy.deepcopy(records)
 
         for row_key, updates in (edited_rows or {}).items():
-            try:
-                idx = int(row_key)
-            except (TypeError, ValueError):
-                logger.debug("[_apply_editor_dict_diffs] Non-numeric row key %s", row_key)
+            idx = FormGenerator._parse_editor_row_index(row_key)
+            if idx is None:
                 continue
 
             while idx >= len(working):
@@ -198,13 +217,11 @@ class FormGenerator:
 
         for row_key in sorted(
             deleted_rows or [],
-            key=lambda x: int(x) if isinstance(x, (int, str)) and str(x).isdigit() else -1,
+            key=FormGenerator._delete_row_sort_index,
             reverse=True,
         ):
-            try:
-                idx = int(row_key)
-            except (TypeError, ValueError):
-                logger.debug("[_apply_editor_dict_diffs] Non-numeric delete key %s", row_key)
+            idx = FormGenerator._parse_editor_row_index(row_key)
+            if idx is None:
                 continue
             if 0 <= idx < len(working):
                 working.pop(idx)

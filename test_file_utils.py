@@ -8,16 +8,23 @@ import tempfile
 import shutil
 from datetime import datetime, timedelta
 from pathlib import Path
+from types import SimpleNamespace
 import pytest
 from unittest.mock import patch, mock_open
 from typing import Optional, Dict, Any
 
 # Import the module to test
+import utils.file_utils as file_utils
 from utils.file_utils import (
     list_unverified_files,
+    initialize_directories,
+    get_directories,
+    ensure_directories_exist,
     claim_file,
     release_file,
     is_file_locked,
+    get_lock_owner,
+    get_lock_expiry,
     cleanup_stale_locks,
     load_json_file,
     save_corrected_json,
@@ -299,3 +306,218 @@ class TestFileUtils:
 if __name__ == "__main__":
     # Run tests if script is executed directly
     pytest.main([__file__])
+
+
+def _result(is_ready: bool = True, is_successful: bool = True):
+    return SimpleNamespace(is_ready=is_ready, is_successful=is_successful)
+
+
+def test_initialize_directories_with_config_creation_failure_uses_graceful_degradation(monkeypatch):
+    cfg_primary = object()
+    cfg_fallback = object()
+    monkeypatch.setattr(file_utils, "_directory_config", None)
+
+    validator = SimpleNamespace(validate_all_paths=lambda _cfg: [_result(is_ready=True)])
+    creator = SimpleNamespace(create_all_directories=lambda _cfg: [_result(is_successful=False)])
+
+    with patch.object(file_utils.DirectoryConfig, "from_config", return_value=cfg_primary), patch.object(
+        file_utils, "DirectoryValidator", return_value=validator
+    ), patch.object(file_utils, "DirectoryCreator", return_value=creator), patch.object(
+        file_utils, "apply_graceful_degradation", return_value=cfg_fallback
+    ) as mock_degrade:
+        assert initialize_directories({"directories": {}}) is True
+
+    assert mock_degrade.called
+
+
+def test_initialize_directories_outer_exception_uses_defaults_when_handled(monkeypatch):
+    cfg_default = object()
+    monkeypatch.setattr(file_utils, "_directory_config", None)
+
+    with patch.object(file_utils, "apply_graceful_degradation", side_effect=RuntimeError("boom")), patch.object(
+        file_utils, "handle_directory_error", return_value=True
+    ), patch("utils.config_loader.get_default_config", return_value={"directories": {}}), patch.object(
+        file_utils.DirectoryConfig, "from_config", return_value=cfg_default
+    ):
+        assert initialize_directories() is True
+
+    assert file_utils._directory_config is cfg_default
+
+
+def test_initialize_directories_outer_exception_returns_false_when_unhandled(monkeypatch):
+    monkeypatch.setattr(file_utils, "_directory_config", None)
+
+    with patch.object(file_utils, "apply_graceful_degradation", side_effect=RuntimeError("boom")), patch.object(
+        file_utils, "handle_directory_error", return_value=False
+    ):
+        assert initialize_directories() is False
+
+
+def test_get_directories_falls_back_when_initialize_fails(monkeypatch):
+    fallback_config = object()
+    monkeypatch.setattr(file_utils, "_directory_config", None)
+
+    with patch.object(file_utils, "initialize_directories", return_value=False), patch(
+        "utils.config_loader.get_default_config", return_value={"directories": {}}
+    ), patch.object(file_utils, "get_directory_config", return_value=fallback_config):
+        result = get_directories()
+
+    assert result is fallback_config
+
+
+def test_ensure_directories_exist_logs_mkdir_error(monkeypatch):
+    class BadDir:
+        def mkdir(self, parents=True, exist_ok=True):
+            raise OSError("cannot create")
+
+    fake_dirs = SimpleNamespace(to_dict=lambda: {"bad": BadDir()})
+    with patch.object(file_utils, "get_directories", return_value=fake_dirs), patch.object(
+        file_utils, "logger"
+    ) as mock_logger:
+        ensure_directories_exist()
+
+    mock_logger.error.assert_called_once()
+
+
+def test_claim_file_returns_false_when_lock_write_fails(monkeypatch, tmp_path):
+    locks = tmp_path / "locks"
+    locks.mkdir()
+    fake_dirs = SimpleNamespace(locks=locks)
+
+    with patch.object(file_utils, "ensure_directories_exist"), patch.object(
+        file_utils, "get_directories", return_value=fake_dirs
+    ), patch.object(file_utils, "is_file_locked", return_value=False), patch(
+        "builtins.open", side_effect=OSError("no write")
+    ):
+        assert claim_file("doc.json", "user") is False
+
+
+def test_release_file_returns_false_when_unlink_fails(tmp_path):
+    locks = tmp_path / "locks"
+    locks.mkdir()
+    lock_file = locks / "doc.json.lock"
+    lock_file.write_text("x", encoding="utf-8")
+    fake_dirs = SimpleNamespace(locks=locks)
+
+    with patch.object(file_utils, "get_directories", return_value=fake_dirs), patch.object(
+        Path, "unlink", side_effect=OSError("cannot unlink")
+    ):
+        assert release_file("doc.json") is False
+
+
+def test_is_file_locked_invalid_lock_data_removes_lock_and_returns_false(tmp_path):
+    locks = tmp_path / "locks"
+    locks.mkdir()
+    lock_file = locks / "doc.json.lock"
+    lock_file.write_text("not-json", encoding="utf-8")
+    fake_dirs = SimpleNamespace(locks=locks)
+
+    with patch.object(file_utils, "get_directories", return_value=fake_dirs):
+        assert is_file_locked("doc.json") is False
+
+    assert not lock_file.exists()
+
+
+def test_get_lock_owner_invalid_json_returns_none(tmp_path):
+    locks = tmp_path / "locks"
+    locks.mkdir()
+    lock_file = locks / "doc.json.lock"
+    lock_file.write_text("not-json", encoding="utf-8")
+    fake_dirs = SimpleNamespace(locks=locks)
+
+    with patch.object(file_utils, "get_directories", return_value=fake_dirs):
+        assert get_lock_owner("doc.json") is None
+
+
+def test_get_lock_expiry_invalid_json_returns_none(tmp_path):
+    locks = tmp_path / "locks"
+    locks.mkdir()
+    lock_file = locks / "doc.json.lock"
+    lock_file.write_text("not-json", encoding="utf-8")
+    fake_dirs = SimpleNamespace(locks=locks)
+
+    with patch.object(file_utils, "get_directories", return_value=fake_dirs):
+        assert get_lock_expiry("doc.json") is None
+
+
+def test_cleanup_stale_locks_removes_corrupted_files(tmp_path):
+    locks = tmp_path / "locks"
+    locks.mkdir()
+    corrupted = locks / "broken.lock"
+    corrupted.write_text("not-json", encoding="utf-8")
+    fake_dirs = SimpleNamespace(locks=locks)
+
+    with patch.object(file_utils, "ensure_directories_exist"), patch.object(
+        file_utils, "get_directories", return_value=fake_dirs
+    ):
+        removed = cleanup_stale_locks()
+
+    assert removed == 1
+    assert not corrupted.exists()
+
+
+def test_load_json_file_returns_none_on_parse_error(tmp_path):
+    json_docs = tmp_path / "json_docs"
+    json_docs.mkdir()
+    bad_json = json_docs / "bad.json"
+    bad_json.write_text("{bad json}", encoding="utf-8")
+    fake_dirs = SimpleNamespace(json_docs=json_docs)
+
+    with patch.object(file_utils, "get_directories", return_value=fake_dirs):
+        assert load_json_file("bad.json") is None
+
+
+def test_save_corrected_json_returns_false_on_write_error(tmp_path):
+    corrected = tmp_path / "corrected"
+    corrected.mkdir()
+    fake_dirs = SimpleNamespace(corrected=corrected)
+
+    with patch.object(file_utils, "ensure_directories_exist"), patch.object(
+        file_utils, "get_directories", return_value=fake_dirs
+    ), patch("builtins.open", side_effect=OSError("no write")):
+        assert save_corrected_json("x.json", {"a": 1}) is False
+
+
+def test_append_audit_log_sanitizes_deepdiff_root_paths(tmp_path):
+    audits = tmp_path / "audits"
+    audits.mkdir()
+    fake_dirs = SimpleNamespace(audits=audits)
+    entry = {
+        "filename": "sample.json",
+        "detailed_diff": {
+            "values_changed": "SetOrdered([<root['Supplier name'] t1:'A', t2:'B'>, <root['Invoice Amount'] t1:1, t2:2>])",
+            "single": "root['Tax Amount']",
+        },
+    }
+
+    with patch.object(file_utils, "ensure_directories_exist"), patch.object(
+        file_utils, "get_directories", return_value=fake_dirs
+    ):
+        assert append_audit_log(entry) is True
+
+    saved_line = (audits / "audit.jsonl").read_text(encoding="utf-8").strip()
+    saved = json.loads(saved_line)
+    assert saved["detailed_diff"]["values_changed"] == ["Supplier name", "Invoice Amount"]
+    assert saved["detailed_diff"]["single"] == ["Tax Amount"]
+
+
+def test_append_audit_log_returns_false_on_write_error(tmp_path):
+    audits = tmp_path / "audits"
+    audits.mkdir()
+    fake_dirs = SimpleNamespace(audits=audits)
+
+    with patch.object(file_utils, "ensure_directories_exist"), patch.object(
+        file_utils, "get_directories", return_value=fake_dirs
+    ), patch("builtins.open", side_effect=OSError("no write")):
+        assert append_audit_log({"filename": "x.json"}) is False
+
+
+def test_read_audit_logs_returns_empty_on_invalid_line(tmp_path):
+    audits = tmp_path / "audits"
+    audits.mkdir()
+    audit_file = audits / "audit.jsonl"
+    audit_file.write_text("{invalid json}\n", encoding="utf-8")
+    fake_dirs = SimpleNamespace(audits=audits)
+
+    with patch.object(file_utils, "get_directories", return_value=fake_dirs):
+        assert read_audit_logs() == []

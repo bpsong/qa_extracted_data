@@ -3899,12 +3899,7 @@ def validate_field_names(fields: Dict[str, Any]) -> List[str]:
         
         # Check for empty field names
         for field_name in field_names:
-            if not field_name or not isinstance(field_name, str):
-                errors.append("Field names must be non-empty strings")
-            elif len(field_name.strip()) == 0:
-                errors.append("Field names cannot be empty or only whitespace")
-            elif len(field_name) > 100:
-                errors.append(f"Field name '{field_name}' is too long (max 100 characters)")
+            errors.extend(_validate_single_field_name(field_name))
         
         # Check for duplicate field names (case-insensitive)
         lower_names = [name.lower() for name in field_names if isinstance(name, str)]
@@ -3921,6 +3916,17 @@ def validate_field_names(fields: Dict[str, Any]) -> List[str]:
         errors.append(f"Error validating field names: {str(e)}")
     
     return errors
+
+
+def _validate_single_field_name(field_name: Any) -> List[str]:
+    """Validate a single field name and return its validation errors."""
+    if not field_name or not isinstance(field_name, str):
+        return ["Field names must be non-empty strings"]
+    if len(field_name.strip()) == 0:
+        return ["Field names cannot be empty or only whitespace"]
+    if len(field_name) > 100:
+        return [f"Field name '{field_name}' is too long (max 100 characters)"]
+    return []
 
 
 

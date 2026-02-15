@@ -7,6 +7,14 @@ import pytest
 import utils.pdf_viewer as pdf_viewer
 
 
+class _DummyContext:
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        return False
+
+
 @pytest.fixture
 def mock_st(monkeypatch):
     st = SimpleNamespace(
@@ -181,3 +189,170 @@ def test_get_pdf_metadata_with_corrupt_pdf(tmp_path):
 
     assert metadata["page_count"] is None
     assert metadata["title"] is None
+
+
+def test_display_pdf_exception_path_uses_fallback():
+    with patch.object(
+        pdf_viewer.PDFViewer, "_try_streamlit_pdf_viewer", side_effect=RuntimeError("boom")
+    ), patch.object(pdf_viewer.PDFViewer, "_display_pdf_fallback") as mock_fallback:
+        pdf_viewer.PDFViewer._display_pdf(Path("doc.pdf"))
+
+    mock_fallback.assert_called_once_with(Path("doc.pdf"))
+
+
+def test_try_streamlit_pdf_viewer_success_invokes_pdf_viewer_and_info():
+    called = {}
+
+    def fake_pdf_viewer(path, width, height):
+        called["args"] = (path, width, height)
+
+    fake_module = SimpleNamespace(pdf_viewer=fake_pdf_viewer)
+    with patch.dict("sys.modules", {"streamlit_pdf_viewer": fake_module}), patch.object(
+        pdf_viewer.PDFViewer, "_display_pdf_info"
+    ) as mock_info:
+        result = pdf_viewer.PDFViewer._try_streamlit_pdf_viewer(Path("doc.pdf"))
+
+    assert result is True
+    assert called["args"] == ("doc.pdf", 700, 600)
+    mock_info.assert_called_once_with(Path("doc.pdf"))
+
+
+def test_try_streamlit_pdf_viewer_runtime_failure_returns_false():
+    def fake_pdf_viewer(*_args, **_kwargs):
+        raise ValueError("render failed")
+
+    fake_module = SimpleNamespace(pdf_viewer=fake_pdf_viewer)
+    with patch.dict("sys.modules", {"streamlit_pdf_viewer": fake_module}):
+        assert pdf_viewer.PDFViewer._try_streamlit_pdf_viewer(Path("doc.pdf")) is False
+
+
+def test_try_iframe_embed_success(monkeypatch, tmp_path):
+    pdf_path = tmp_path / "doc.pdf"
+    pdf_path.write_bytes(b"%PDF-1.4")
+    st = SimpleNamespace(markdown=MagicMock(), caption=MagicMock())
+    monkeypatch.setattr(pdf_viewer, "st", st)
+
+    with patch.object(pdf_viewer.PDFViewer, "_display_pdf_info") as mock_info:
+        result = pdf_viewer.PDFViewer._try_iframe_embed(pdf_path)
+
+    assert result is True
+    st.markdown.assert_called_once()
+    st.caption.assert_called_once()
+    mock_info.assert_called_once_with(pdf_path)
+
+
+def test_try_iframe_embed_failure_returns_false(monkeypatch):
+    st = SimpleNamespace(markdown=MagicMock(), caption=MagicMock())
+    monkeypatch.setattr(pdf_viewer, "st", st)
+
+    with patch("builtins.open", side_effect=OSError("cannot read")):
+        assert pdf_viewer.PDFViewer._try_iframe_embed(Path("doc.pdf")) is False
+
+
+def test_display_pdf_fallback_download_failure_still_shows_text_preview(monkeypatch):
+    st = SimpleNamespace(info=MagicMock(), error=MagicMock(), download_button=MagicMock())
+    monkeypatch.setattr(pdf_viewer, "st", st)
+
+    with patch.object(pdf_viewer.PDFViewer, "_display_pdf_info") as mock_info, patch.object(
+        pdf_viewer.PDFViewer, "_try_display_pdf_text_preview"
+    ) as mock_preview, patch("builtins.open", side_effect=OSError("cannot read")):
+        pdf_viewer.PDFViewer._display_pdf_fallback(Path("doc.pdf"))
+
+    st.info.assert_called_once()
+    st.error.assert_called_once()
+    mock_info.assert_called_once_with(Path("doc.pdf"))
+    mock_preview.assert_called_once_with(Path("doc.pdf"))
+
+
+def test_try_display_pdf_text_preview_image_based_pdf(monkeypatch, tmp_path):
+    class FakePage:
+        def extract_text(self):
+            return ""
+
+    class FakeReader:
+        def __init__(self, _):
+            self.pages = [FakePage()]
+
+    st = SimpleNamespace(
+        expander=MagicMock(return_value=_DummyContext()),
+        text_area=MagicMock(),
+        info=MagicMock(),
+    )
+    monkeypatch.setattr(pdf_viewer, "st", st)
+
+    pdf_path = tmp_path / "image.pdf"
+    pdf_path.write_bytes(b"%PDF-1.4")
+    fake_module = SimpleNamespace(PdfReader=FakeReader)
+
+    with patch.dict("sys.modules", {"PyPDF2": fake_module}):
+        pdf_viewer.PDFViewer._try_display_pdf_text_preview(pdf_path)
+
+    st.info.assert_called_once()
+    st.text_area.assert_not_called()
+
+
+def test_display_pdf_not_found_lists_available_files(monkeypatch, tmp_path):
+    st = SimpleNamespace(
+        warning=MagicMock(),
+        info=MagicMock(),
+        markdown=MagicMock(),
+        container=MagicMock(return_value=_DummyContext()),
+        expander=MagicMock(return_value=_DummyContext()),
+        write=MagicMock(),
+        error=MagicMock(),
+    )
+    monkeypatch.setattr(pdf_viewer, "st", st)
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "pdf_docs").mkdir()
+    (tmp_path / "pdf_docs" / "a.pdf").write_bytes(b"x")
+    (tmp_path / "pdf_docs" / "b.pdf").write_bytes(b"x")
+
+    pdf_viewer.PDFViewer._display_pdf_not_found("invoice.json")
+
+    assert st.warning.called
+    assert st.markdown.called
+    assert any("a.pdf" in str(call.args[0]) for call in st.write.call_args_list if call.args)
+    assert any("b.pdf" in str(call.args[0]) for call in st.write.call_args_list if call.args)
+
+
+def test_render_pdf_metadata_writes_present_fields(monkeypatch):
+    st = SimpleNamespace(
+        expander=MagicMock(return_value=_DummyContext()),
+        columns=MagicMock(return_value=(_DummyContext(), _DummyContext())),
+        write=MagicMock(),
+    )
+    monkeypatch.setattr(pdf_viewer, "st", st)
+
+    metadata = {
+        "title": "Doc",
+        "author": None,
+        "subject": "Subj",
+        "creator": "Creator",
+        "producer": None,
+        "creation_date": "2026-01-01",
+        "modification_date": None,
+        "page_count": 2,
+    }
+    with patch.object(pdf_viewer.PDFViewer, "get_pdf_metadata", return_value=metadata):
+        pdf_viewer.PDFViewer.render_pdf_metadata(Path("doc.pdf"))
+
+    writes = [str(c.args[0]) for c in st.write.call_args_list if c.args]
+    assert any("Title" in w for w in writes)
+    assert any("Subject" in w for w in writes)
+    assert any("Pages" in w for w in writes)
+    assert any("Creator" in w for w in writes)
+    assert any("Created" in w for w in writes)
+    assert not any("Author" in w for w in writes)
+    assert not any("Producer" in w for w in writes)
+
+
+def test_convenience_render_pdf_preview_calls_classmethod():
+    with patch.object(pdf_viewer.PDFViewer, "render_pdf_preview") as mock_render:
+        pdf_viewer.render_pdf_preview("invoice.json")
+    mock_render.assert_called_once_with("invoice.json")
+
+
+def test_convenience_display_pdf_not_found_calls_classmethod():
+    with patch.object(pdf_viewer.PDFViewer, "_display_pdf_not_found") as mock_display:
+        pdf_viewer.display_pdf_not_found("invoice.json")
+    mock_display.assert_called_once_with("invoice.json")
