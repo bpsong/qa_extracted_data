@@ -89,7 +89,7 @@ python -m streamlit run streamlit_app.py
          - ./pdfs:/app/pdf_docs
          - ./schemas:/app/schemas
          - ./corrected:/app/corrected
-         - ./audit_logs:/app/audit_logs
+         - ./audits:/app/audits
        environment:
          - STREAMLIT_SERVER_HEADLESS=true
          - STREAMLIT_BROWSER_GATHER_USAGE_STATS=false
@@ -212,11 +212,11 @@ export JSON_QA_LOG_LEVEL=INFO
    pdf_directory: "./pdf_docs"
    schema_directory: "./schemas"
    output_directory: "./corrected"
-   audit_directory: "./audit_logs"
+   audit_directory: "./audits"
    
    # Application settings
-   max_file_size_mb: 50
-   lock_timeout_minutes: 30
+   max_file_size: 50
+   lock_timeout: 30
    auto_cleanup_enabled: true
    
    # UI settings
@@ -251,7 +251,7 @@ curl http://localhost:8501/_stcore/health
 
 # Check file system
 df -h
-du -sh json_docs/ corrected/ audit_logs/
+du -sh json_docs/ corrected/ audits/
 
 # Check processes
 ps aux | grep streamlit
@@ -266,7 +266,7 @@ tail -f ~/.streamlit/logs/streamlit.log
 journalctl -u json-qa-app -f
 
 # Audit logs
-tail -f audit_logs/audit.jsonl
+tail -f audits/audit.jsonl
 ```
 
 ### Maintenance Tasks
@@ -275,7 +275,7 @@ tail -f audit_logs/audit.jsonl
 find locks/ -name "*.lock" -mmin +30 -delete
 
 # Archive old audit logs
-gzip audit_logs/audit-$(date +%Y%m).jsonl
+gzip audits/audit-$(date +%Y%m).jsonl
 
 # Backup corrected files
 tar -czf backups/corrected-$(date +%Y%m%d).tar.gz corrected/

@@ -156,19 +156,13 @@ directories:
 
 ## Configuration Templates
 
-The `config-templates/` directory contains ready-to-use configurations:
+Ready-to-use baseline configuration is provided in `example-config.yaml`.
 
-- `production-config.yaml` - Production deployment
-- `development-config.yaml` - Development environment
-- `docker-config.yaml` - Container deployment
-- `testing-config.yaml` - Automated testing
-- `minimal-config.yaml` - Minimal customization
+### Using the Example Configuration
 
-### Using Templates
-
-1. **Copy a template:**
+1. **Copy the example:**
    ```bash
-   cp config-templates/production-config.yaml config.yaml
+   cp example-config.yaml config.yaml
    ```
 
 2. **Customize paths:**
@@ -314,10 +308,10 @@ initialize_directories(config)
 Use different config files:
 ```bash
 # Development
-cp config-templates/development-config.yaml config.yaml
+cp example-config.yaml config.yaml
 
 # Production
-cp config-templates/production-config.yaml config.yaml
+cp example-config.yaml config.yaml
 ```
 
 ## Support
@@ -332,7 +326,7 @@ For configuration issues:
 
 ## Examples Repository
 
-See the `config-templates/` directory for complete examples:
+See `example-config.yaml` for a complete baseline example:
 - Production deployment configurations
 - Development environment setups
 - Container and Docker configurations

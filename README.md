@@ -2,6 +2,15 @@
 
 A Streamlit-based web application for quality assurance and correction of extracted JSON data from PDF documents. The application provides a user-friendly interface for reviewing, editing, and validating JSON data with real-time diff visualization and audit logging.
 
+## Documentation by Audience
+
+- **Non-technical operators**: [USER_GUIDE.md](USER_GUIDE.md)
+- **Technical maintainers/engineers**: [TECHNICAL_GUIDE.md](TECHNICAL_GUIDE.md)
+- **Configuration details**: [CONFIGURATION.md](CONFIGURATION.md)
+- **Schema authoring**: [SCHEMA_GUIDE.md](SCHEMA_GUIDE.md)
+- **Deployment runbooks**: [DEPLOYMENT.md](DEPLOYMENT.md)
+- **Documentation quality review**: [DOCUMENTATION_REVIEW.md](DOCUMENTATION_REVIEW.md)
+
 ## Features
 
 ### Core Functionality
@@ -169,7 +178,7 @@ schema:
 ### Output Files
 - Corrected files are saved to `corrected/` directory
 - Original files remain unchanged in `json_docs/`
-- Audit logs are written to `audit_logs/` in JSONL format
+- Audit logs are written to `audits/` in JSONL format
 
 ### File Locking
 - Files are automatically locked when claimed by a user
@@ -430,7 +439,7 @@ The application provides detailed error messages with suggested actions:
 - Keep JSON files under 10MB for optimal performance
 - Use specific schemas rather than generic ones for better validation
 - Regularly clean up processed files from `json_docs/` directory
-- Monitor `audit_logs/` directory size and archive old logs
+- Monitor `audits/` directory size and archive old logs
 
 ### Resource Usage
 - Memory usage scales with file size and complexity
