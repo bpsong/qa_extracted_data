@@ -1,71 +1,102 @@
-# Documentation Review: Coverage, Accuracy, and Consolidation
+# Documentation Review: docs set vs source code
 
 ## Scope reviewed
 
+Because this repository currently stores documentation files at the repository root (not in a `docs/` directory), this review covered:
+
 - `README.md`
 - `CONFIGURATION.md`
-- `SCHEMA_GUIDE.md`
 - `DEPLOYMENT.md`
-- `sandbox/README.md`
+- `TECHNICAL_GUIDE.md`
+- `USER_GUIDE.md`
+- `SCHEMA_GUIDE.md`
 
-## Overall assessment
+Source-of-truth code checked:
 
-The codebase has **good breadth** of documentation, but information is split across files and has a few stale references that can confuse users.
+- `utils/config_loader.py`
+- `utils/directory_config.py`
+- `utils/file_utils.py`
+- `streamlit_app.py`
+- `requirements.txt`
 
-## What matches the codebase well
+## Overall result
 
-- Core workflow (queue → edit → submit → audit) aligns with `streamlit_app.py` and view modules.
-- Directory-based processing model is aligned with `utils/file_utils.py` and `utils/config_loader.py`.
-- Schema-driven form approach aligns with `utils/schema_loader.py`, `utils/model_builder.py`, and `utils/form_generator.py`.
+Documentation is mostly aligned with runtime behavior, especially around:
 
-## Accuracy issues found
+- canonical directory keys under `directories.*`
+- canonical processing keys under `processing.*`
+- queue/edit/audit workflow and schema-driven forms
 
-1. **Audit directory naming drift**
-   - Some docs referred to `audit_logs/`, while runtime config and file utilities use `audits/`.
+However, there are several documentation updates recommended below.
 
-2. **Configuration key naming drift in deployment docs**
-   - `max_file_size_mb` / `lock_timeout_minutes` appeared in examples, while code consumes `max_file_size` / `lock_timeout`.
+## Recommended documentation updates
 
-3. **Non-existent template directory references**
-   - `CONFIGURATION.md` referenced `config-templates/` files that are not present in the repository.
+### 1) `DEPLOYMENT.md`: application config snippet uses non-canonical keys
 
-## Changes made in this review
+**Issue**
 
-- Standardized docs to use **`audits/`** naming.
-- Updated deployment config examples to canonical processing keys:
-  - `processing.max_file_size`
-  - `processing.lock_timeout`
-- Replaced `config-templates/` references with the existing `example-config.yaml` workflow.
-- Added two consolidation docs:
-  - `USER_GUIDE.md` (task-oriented, non-technical)
-  - `TECHNICAL_GUIDE.md` (implementation-oriented)
+The "Application Config (`config.yaml`)" example currently uses legacy/unsupported keys such as:
 
-## Consolidation model (recommended)
+- `data_directory`
+- `pdf_directory`
+- `schema_directory`
+- `output_directory`
+- `audit_directory`
+- top-level `max_file_size`, `lock_timeout`
 
-Use a persona-first doc set:
+But runtime configuration is loaded from nested sections and canonical keys:
 
-1. **`USER_GUIDE.md`** — operators, QA users, business reviewers.
-2. **`README.md`** — project entrypoint and quick links.
-3. **`TECHNICAL_GUIDE.md`** — architecture, canonical config keys, testing entry points.
-4. **`SCHEMA_GUIDE.md`** — schema authoring deep dive.
-5. **`DEPLOYMENT.md`** — deployment/runbook details.
-6. **`CONFIGURATION.md`** — exhaustive configuration behavior and examples.
+- `directories.json_docs`, `directories.pdf_docs`, `directories.corrected`, `directories.audits`, `directories.locks`
+- `processing.max_file_size`, `processing.lock_timeout`
 
-## Improvements for non-technical users
+**Documentation update needed**
 
-- Keep action-oriented language and screen-by-screen workflows.
-- Prefer “what to do next” troubleshooting over internal implementation details.
-- Maintain a single “common errors” table in `USER_GUIDE.md` and link from README.
+Replace this section with canonical nested config structure consistent with `utils/config_loader.py`.
 
-## Improvements for technical users
+---
 
-- Add a short “source of truth” section listing canonical keys and path names.
-- Add “docs versioning” note in release process to avoid stale examples.
-- Keep environment-specific snippets limited to settings that are verified in code.
+### 2) `README.md`: dependency minimum versions are stale
 
-## Maintenance checklist (lightweight)
+**Issue**
 
-For any PR that changes config/runtime behavior:
-- Update relevant guide(s).
-- Verify names of directories and keys against `utils/config_loader.py` and `utils/file_utils.py`.
-- Run at least targeted docs consistency checks (grep for deprecated key/path strings).
+`README.md` lists older minimum versions (for example, `streamlit>=1.31.0`) while `requirements.txt` now pins higher minimums (for example, `streamlit>=1.50.0`, `pydantic>=2.11.0`, etc.).
+
+**Documentation update needed**
+
+Update the dependency list in `README.md` to match `requirements.txt` exactly, or replace hardcoded versions with a short note: "See `requirements.txt` for canonical dependency versions."
+
+---
+
+### 3) Python version guidance should be normalized
+
+**Issue**
+
+`README.md` and `DEPLOYMENT.md` currently state Python `3.8+`, while current dependencies and deployment examples effectively target modern versions (e.g., Docker example uses Python 3.9).
+
+**Documentation update needed**
+
+Normalize Python guidance across docs to a single minimum that is guaranteed compatible with `requirements.txt` (recommended: `3.9+`).
+
+---
+
+### 4) Clarify docs location naming
+
+**Issue**
+
+Some workflows refer to "documentation in docs folder," but this repository stores primary docs in the root.
+
+**Documentation update needed**
+
+Add a short note in `README.md` under "Documentation by Audience" that docs live in the repository root.
+
+## No update currently needed
+
+The following are currently consistent with source code and can remain as-is:
+
+- `CONFIGURATION.md` canonical key names (`processing.lock_timeout`, `processing.max_file_size`, `directories.*`)
+- `TECHNICAL_GUIDE.md` key and directory conventions
+- `USER_GUIDE.md` audit path reference (`audits/audit.jsonl`)
+
+## Optional follow-up cleanup (non-documentation)
+
+`setup.py` still creates `audit_logs/` during bootstrap, while runtime/config conventions use `audits/`. This is a **code** inconsistency rather than a docs inconsistency and should be fixed in source.
