@@ -5,11 +5,11 @@ A Streamlit-based web application for quality assurance and correction of extrac
 ## Documentation by Audience
 
 - **Non-technical operators**: [USER_GUIDE.md](USER_GUIDE.md)
+- **Common operator troubleshooting**: [USER_GUIDE.md#common-errors](USER_GUIDE.md#common-errors)
 - **Technical maintainers/engineers**: [TECHNICAL_GUIDE.md](TECHNICAL_GUIDE.md)
 - **Configuration details**: [CONFIGURATION.md](CONFIGURATION.md)
 - **Schema authoring**: [SCHEMA_GUIDE.md](SCHEMA_GUIDE.md)
 - **Deployment runbooks**: [DEPLOYMENT.md](DEPLOYMENT.md)
-- **Documentation quality review**: [DOCUMENTATION_REVIEW.md](DOCUMENTATION_REVIEW.md)
 
 ## Features
 
@@ -67,16 +67,15 @@ The application will be available at `http://localhost:8501`
 The application uses configurable directory paths. By default, it expects:
 ```
 project_root/
-├── config.yaml          # Configuration file (optional)
-├── json_docs/          # Unverified JSON files to process
-├── corrected/           # Processed and corrected JSON files
-├── pdf_docs/            # PDF source documents
-├── schemas/             # YAML/JSON schema definitions
-├── audits/              # Processing audit trail (auto-created)
-├── locks/               # File lock management (auto-created)
-└── utils/               # Application utilities
+|-- config.yaml    # Configuration file (optional)
+|-- json_docs/     # Unverified JSON files to process
+|-- corrected/     # Processed and corrected JSON files
+|-- pdf_docs/      # PDF source documents
+|-- schemas/       # YAML/JSON schema definitions
+|-- audits/        # Processing audit trail (auto-created)
+|-- locks/         # File lock management (auto-created)
+`-- utils/         # Application utilities
 ```
-
 **Note**: All directory paths can be customized through the `config.yaml` file (see Configuration section below).
 
 ### Workflow
@@ -166,14 +165,14 @@ schema:
   - object arrays use a table-style editor with add/remove row controls
 - `object` - Nested form sections for complex data
 
-**📖 See [SCHEMA_GUIDE.md](SCHEMA_GUIDE.md) for complete documentation with examples and troubleshooting.**
+See [SCHEMA_GUIDE.md](SCHEMA_GUIDE.md) for complete documentation with examples and troubleshooting.
 
 ## File Management
 
 ### Input Files
 - Place unverified JSON files in `json_docs/`
 - Corresponding PDF files should be in `pdf_docs/` with matching names
-- Example: `invoice_001.json` → `invoice_001.pdf`
+- Example: `invoice_001.json` -> `invoice_001.pdf`
 
 ### Output Files
 - Corrected files are saved to `corrected/` directory
@@ -313,35 +312,34 @@ gatherUsageStats = false
 
 ### Project Structure
 ```
-├── streamlit_app.py          # Main application entry point
-├── utils/
-│   ├── audit_view.py         # Audit log interface
-│   ├── config_loader.py      # Configuration file loading and validation
-│   ├── diff_utils.py         # Change detection and visualization
-│   ├── directory_config.py   # Directory path configuration management
-│   ├── directory_creator.py  # Automatic directory creation utilities
-│   ├── directory_exceptions.py # Custom exceptions for directory operations
-│   ├── directory_validator.py # Directory path validation
-│   ├── edit_view.py          # PDF and form editing interface
-│   ├── error_handler.py      # Error handling utilities
-│   ├── file_utils.py         # File operations and locking
-│   ├── form_generator.py     # Dynamic form generation
-│   ├── graceful_degradation.py # Fallback mechanisms for missing components
-│   ├── model_builder.py      # Dynamic Pydantic model creation
-│   ├── pdf_viewer.py         # PDF display utilities
-│   ├── queue_view.py         # File queue interface
-│   ├── schema_editor_view.py # Interactive schema editing interface
-│   ├── schema_loader.py      # Schema loading and validation
-│   ├── session_manager.py    # Session state management
-│   ├── submission_handler.py # Form submission processing
-│   └── ui_feedback.py        # User interface feedback
-├── schemas/                  # Schema definitions
-├── json_docs/                # Input JSON files
-├── pdf_docs/                 # PDF source documents
-├── tests/                    # Unit and integration tests
-└── config.yaml               # Application configuration (optional)
+|-- streamlit_app.py            # Main application entry point
+|-- utils/
+|   |-- audit_view.py           # Audit log interface
+|   |-- config_loader.py        # Configuration file loading and validation
+|   |-- diff_utils.py           # Change detection and visualization
+|   |-- directory_config.py     # Directory path configuration management
+|   |-- directory_creator.py    # Automatic directory creation utilities
+|   |-- directory_exceptions.py # Custom exceptions for directory operations
+|   |-- directory_validator.py  # Directory path validation
+|   |-- edit_view.py            # PDF and form editing interface
+|   |-- error_handler.py        # Error handling utilities
+|   |-- file_utils.py           # File operations and locking
+|   |-- form_generator.py       # Dynamic form generation
+|   |-- graceful_degradation.py # Fallback mechanisms for missing components
+|   |-- model_builder.py        # Dynamic Pydantic model creation
+|   |-- pdf_viewer.py           # PDF display utilities
+|   |-- queue_view.py           # File queue interface
+|   |-- schema_editor_view.py   # Interactive schema editing interface
+|   |-- schema_loader.py        # Schema loading and validation
+|   |-- session_manager.py      # Session state management
+|   |-- submission_handler.py   # Form submission processing
+|   `-- ui_feedback.py          # User interface feedback
+|-- schemas/                    # Schema definitions
+|-- json_docs/                  # Input JSON files
+|-- pdf_docs/                   # PDF source documents
+|-- tests/                      # Unit and integration tests
+`-- config.yaml                 # Application configuration (optional)
 ```
-
 ### Running Tests
 ```powershell
 # Run all tests
@@ -406,7 +404,7 @@ Key module deltas:
 
 **PDF files not displaying**
 - Ensure PDF files are in `pdf_docs/` directory
-- Check file naming matches JSON files (e.g., `invoice_001.json` → `invoice_001.pdf`)
+- Check file naming matches JSON files (e.g., `invoice_001.json` -> `invoice_001.pdf`)
 - Verify PDF files are not corrupted
 
 **Schema validation errors**
@@ -418,6 +416,8 @@ Key module deltas:
 - Restart the application to clear stale locks
 - Check `locks/` directory permissions
 - Ensure multiple users aren't using the same session
+
+For additional operator-focused troubleshooting, see `USER_GUIDE.md#common-errors`.
 
 ### Error Messages
 The application provides detailed error messages with suggested actions:
@@ -481,3 +481,5 @@ For issues and questions:
 - Comprehensive audit logging
 - Schema-based validation
 - Error handling and recovery
+
+

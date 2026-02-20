@@ -30,6 +30,15 @@ Canonical processing keys consumed by app/config code:
 
 If alternative keys are added in future (`*_minutes`, `*_mb`), add explicit translation logic in `config_loader.py` before documenting them.
 
+## Source of truth
+
+Use these files as the canonical implementation references before changing docs:
+- Runtime directory names and audit path behavior: `utils/file_utils.py`
+- Default configuration shape and key validation: `utils/config_loader.py`
+- Runtime lock timeout wiring in UI/session flow: `streamlit_app.py`
+
+When docs and code differ, update docs to match these sources unless a code change is part of the same PR.
+
 ## Testing
 
 Run full tests:
@@ -57,4 +66,16 @@ python tools/coverage_policy.py --coverage-xml coverage.xml --policy-file covera
 - Schema design: `SCHEMA_GUIDE.md`
 - Deployment options: `DEPLOYMENT.md`
 - Configuration deep dive: `CONFIGURATION.md`
-- Documentation quality review and action plan: `DOCUMENTATION_REVIEW.md`
+
+## Docs versioning in releases
+
+For any PR that changes runtime behavior, config keys, directory names, or operational workflow:
+- Update the affected docs in the same PR.
+- Run a targeted consistency check for deprecated names before merging.
+- Add a short note in the release summary calling out doc updates.
+
+Suggested checks:
+
+```bash
+rg "audit[_]logs|max_file_size[_]mb|lock_timeout[_]minutes|data[_]directory|audit[_]directory" README.md USER_GUIDE.md DEPLOYMENT.md CONFIGURATION.md
+```

@@ -40,11 +40,14 @@ The app helps you:
 - **Lock**: temporary reservation of a file while someone edits it.
 - **Audit log**: permanent change history in `audits/audit.jsonl`.
 
-## Common operator issues
+## Common errors
 
-- **Cannot claim file**: another user may already hold the lock.
-- **PDF not shown**: file may be missing or named differently.
-- **Field validation errors**: value format likely violates schema rules.
+| What you see | What it usually means | What to do next |
+|---|---|---|
+| Cannot claim file | Another user already holds the lock, or the lock has not expired yet. | Wait briefly and try again. If it still fails, ask an admin to check stale locks in `locks/`. |
+| PDF not shown | Matching PDF is missing or named differently than the JSON file. | Confirm matching names in `pdf_docs/` and `json_docs/` (example: `invoice_001.pdf` and `invoice_001.json`). |
+| Field validation error on submit | One or more values do not match schema rules (type, format, required field, range). | Read the field error text, correct the value, and submit again. |
+| Submitted changes but cannot find history | Audit view is filtered or you are checking the wrong file. | Open Audit View, clear filters, then search by filename and recent timestamp. |
 
 ## Where to go next
 

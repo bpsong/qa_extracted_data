@@ -186,10 +186,6 @@ export STREAMLIT_SERVER_HEADLESS=true
 
 # Browser settings
 export STREAMLIT_BROWSER_GATHER_USAGE_STATS=false
-
-# Application settings
-export JSON_QA_DATA_DIR=/path/to/data
-export JSON_QA_LOG_LEVEL=INFO
 ```
 
 ### Configuration Files
@@ -207,21 +203,18 @@ export JSON_QA_LOG_LEVEL=INFO
 
 2. **Application Config** (`config.yaml`)
    ```yaml
-   # File paths
-   data_directory: "./json_docs"
-   pdf_directory: "./pdf_docs"
-   schema_directory: "./schemas"
-   output_directory: "./corrected"
-   audit_directory: "./audits"
-   
-   # Application settings
-   max_file_size: 50
-   lock_timeout: 30
-   auto_cleanup_enabled: true
-   
-   # UI settings
-   items_per_page: 20
-   enable_pdf_preview: true
+   # Directory configuration
+   directories:
+     json_docs: "./json_docs"
+     corrected: "./corrected"
+     audits: "./audits"
+     pdf_docs: "./pdf_docs"
+     locks: "./locks"
+
+   # Processing settings
+   processing:
+     max_file_size: 50
+     lock_timeout: 30
    ```
 
 ## Security Considerations
